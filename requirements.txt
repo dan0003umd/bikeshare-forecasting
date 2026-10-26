@@ -1,0 +1,15 @@
+# Install PyTorch FIRST, using the command from https://pytorch.org/get-started/locally/
+# (Windows, Pip, pick a CUDA version). Then: pip install -r requirements.txt
+numpy
+pandas
+pyarrow
+requests
+holidays
+scikit-learn
+statsmodels
+xgboost
+matplotlib
+transformers
+accelerate
+chronos-forecasting>=2.0
+pytest

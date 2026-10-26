@@ -1,0 +1,19 @@
+"""Project-wide settings. Change values here, not inside the scripts."""
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+RAW_TRIPS_DIR = ROOT / "data" / "raw" / "trips"
+PROCESSED_DIR = ROOT / "data" / "processed"
+
+# Trip files used: monthly files from this (year, month) up to the latest published month.
+START = (2023, 1)
+TRIP_URL = "https://s3.amazonaws.com/capitalbikeshare-data/{ym}-capitalbikeshare-tripdata.zip"
+GBFS_STATION_INFO_URL = "https://gbfs.lyft.com/gbfs/1.1/dca-cabi/en/station_information.json"
+
+# Trip timestamps in the files are local (Eastern) wall-clock time.
+LOCAL_TZ = "America/New_York"
+
+# Stations are ranked by check-outs BEFORE this date (training years only), so the
+# 2025 tuning data and the 2026 test data never influence which stations we pick.
+SELECTION_END = "2025-01-01"
+N_STATIONS = 50
