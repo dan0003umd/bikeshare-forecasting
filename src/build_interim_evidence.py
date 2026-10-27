@@ -29,10 +29,36 @@ def main() -> None:
         coverage_90=results.coverage_90.map("{:.3f}".format), median_mae=results.median_mae.map("{:.4f}".format),
     )
     results_md = ["# Validation Results (2025)", "",
-                  "All rows use the same 435,600 held-out 2025 check-out station-hours: 50 stations x 363 local days x 24 hours.", "",
+                  "All full-window rows below are 2025 validation results on the same 435,600 check-out station-hours: 50 stations x 363 local days x 24 hours. This validation period was also used for transformer early stopping and tuning; these are not 2026 test results.", "",
                   _table(display, ["model", "pinball_loss", "crps", "coverage_90", "median_mae", "n_observations"]), "",
                   "Pinball loss is averaged over the fixed 19 quantiles (0.05--0.95 by 0.05). CRPS is approximated as twice the trapezoidal integral of pinball loss across that grid, so it is related to, not independent of, pinball loss.",
-                  "", "`observed_weather_oracle` rows use realized future weather, not an operational forecast; they are explicitly non-deployable. Only check-outs have been modeled and scored so far; return-demand results are not available."]
+                  "", "`observed_weather_oracle` rows use realized future weather, not an operational forecast; they are explicitly non-deployable. Only check-outs have been modeled and scored so far; return-demand results are not available.",
+                  "", "No saved scored prediction target falls in the local 2026 test period (the final local-2025 evening has a 2026 UTC timestamp). However, the earlier baseline/transformer runs loaded an assembled table that contains later archives before applying their split masks; their scores did not use local-2026 labels, but a literal claim that those historical jobs never read a 2026 row would be false. The new XGBoost and Chronos scripts use Parquet filters that prevent local-2026 rows from being read."]
+    bootstrap_path = cfg.REPORTS_DIR / "paired_bootstrap_validation_2025.csv"
+    if bootstrap_path.exists():
+        bootstrap = pd.read_csv(bootstrap_path).assign(
+            difference_pinball_a_minus_b=lambda x: x.difference_pinball_a_minus_b.map("{:.4f}".format),
+            ci95_low=lambda x: x.ci95_low.map("{:.4f}".format),
+            ci95_high=lambda x: x.ci95_high.map("{:.4f}".format),
+            interpretation=lambda x: x.ci_includes_zero.map(
+                lambda includes: "not distinguishable from zero" if includes else "distinguishable from zero"),
+        )
+        results_md += ["", "## Paired day-bootstrap comparisons", "",
+                       "Each comparison is A minus B in pinball loss. The 95% percentile intervals use 10,000 paired bootstrap resamples of the 363 local dates (not individual station-hours). Negative values favour A.", "",
+                       _table(bootstrap, ["comparison", "difference_pinball_a_minus_b", "ci95_low", "ci95_high", "days", "interpretation"])]
+    chronos_path = cfg.REPORTS_DIR / "chronos_subsample_validation_2025.csv"
+    if chronos_path.exists():
+        chronos = pd.read_csv(chronos_path).sort_values("pinball_loss").assign(
+            pinball_loss=lambda x: x.pinball_loss.map("{:.4f}".format),
+            crps=lambda x: x.crps.map("{:.4f}".format),
+            coverage_90=lambda x: x.coverage_90.map("{:.3f}".format),
+            median_mae=lambda x: x.median_mae.map("{:.4f}".format),
+        )
+        chronos_text = ["# Chronos-2 Fixed-Subsample Validation (2025)", "",
+                        "Chronos-2 zero-shot and every full-window model were scored on the identical deterministic 14,400-row slice: the first 10 sorted station IDs and first 60 complete 2025 local days (2025-01-01 through 2025-03-01). This is a validation-only comparison, not a 2026 test result.", "",
+                        _table(chronos, ["model", "pinball_loss", "crps", "coverage_90", "median_mae", "n_observations"])]
+        (cfg.REPORTS_DIR / "chronos_subsample_results.md").write_text("\n".join(chronos_text) + "\n", encoding="utf-8")
+        results_md += ["", "## Chronos-2 fixed subsample", "", *chronos_text[1:]]
     (cfg.REPORTS_DIR / "results_table.md").write_text("\n".join(results_md) + "\n", encoding="utf-8")
 
     ablations = results[results.model.str.contains("daily_", regex=False)].copy()
@@ -81,6 +107,27 @@ All models are scored on the same 24 future hours for each of 363 eligible local
     daily = results.loc[results.model == "hf_transformer_daily_embed_noweather"].iloc[0]
     oracle = results.loc[results.model == "hf_transformer_daily_embed_observed_weather_oracle"].iloc[0]
     summary = f"""# Interim Evidence Summary\n\n- Built a 50-station hourly check-out/return table from {len(report['months'])} monthly archives; it contains {report['table_rows']:,} station-hours and no nulls after feature assembly.\n- The train/validation boundary is fixed at local 2025-01-01; all seven reported models use the same 435,600 2025 check-out observations. 2026 remains locked.\n- The two DST transition days are excluded because a local day has 23 or 25 physical hours; this leaves 363 valid fixed-24-hour days.\n- The restored causal rolling seasonal naive has pinball loss {rolling.pinball_loss:.4f} and median MAE {rolling.median_mae:.4f}. The daily-stride transformer with station embeddings and no weather improves these to {daily.pinball_loss:.4f} and {daily.median_mae:.4f}.\n- The observed-weather ORACLE reaches {oracle.pinball_loss:.4f} pinball loss and {oracle.median_mae:.4f} median MAE, but it uses realized future weather and is not deployable. Previous Runs forecast-weather coverage is incomplete before 2025.\n- Daily-stride transformer ablations used seed 42 and patience-3 early stopping. XGBoost, Chronos-2, and LSTM have not yet been evaluated.\n"""
+    summary = summary.replace(
+        "all seven reported models use the same 435,600 2025 check-out observations. 2026 remains locked.",
+        "all full-window numbers use the same 435,600 2025 check-out observations. This period was also used for early stopping and tuning, so these are not test results. The 2026 test split remains locked.",
+    )
+    summary = summary.replace(
+        "XGBoost, Chronos-2, and LSTM have not yet been evaluated.",
+        "XGBoost and Chronos-2 have now been evaluated; the LSTM is intentionally deferred to Dylan.",
+    )
+    xgboost = results.loc[results.model == "xgboost_shared_quantile"]
+    if len(xgboost):
+        xgb = xgboost.iloc[0]
+        summary += (f"- The shared XGBoost quantile baseline, fit only on 2023--2024 data, has pinball loss "
+                    f"{xgb.pinball_loss:.4f}, CRPS {xgb.crps:.4f}, and median MAE {xgb.median_mae:.4f}; its fit took "
+                    f"{xgb.fit_minutes:.2f} minutes.\n")
+    if (cfg.REPORTS_DIR / "chronos_subsample_validation_2025.csv").exists():
+        chronos_score = pd.read_csv(cfg.REPORTS_DIR / "chronos_subsample_validation_2025.csv").query("model == 'chronos2_zero_shot'").iloc[0]
+        summary += (f"- Chronos-2 zero-shot was evaluated only on the fixed 14,400-row 2025 validation subsample; "
+                    f"its pinball loss was {chronos_score.pinball_loss:.4f}.\n")
+    summary += ("- No saved scored target falls in the local 2026 test period (the final local-2025 evening has a 2026 UTC timestamp). "
+                "Historical baseline/transformer scripts did load an assembled table containing later archives before masking to 2025, "
+                "so the project cannot claim that no 2026 row was ever read; the new XGBoost and Chronos loaders use pre-2026 Parquet predicates.\n")
     (cfg.REPORTS_DIR / "interim_evidence.md").write_text(summary, encoding="utf-8")
     print("wrote interim evidence markdown and results table")
 

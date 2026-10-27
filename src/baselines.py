@@ -64,7 +64,13 @@ def save_predictions(table: pd.DataFrame, valid: pd.Series, pred: np.ndarray, mo
     """Persist all 19 quantiles and truth locally; data/ is intentionally ignored."""
     columns = [f"q{int(q * 100):02d}" for q in cfg.QUANTILES]
     out = table.loc[valid, ["station_id", "ts_utc", "checkouts"]].rename(columns={"checkouts": "actual"}).copy()
-    out[columns] = pred[valid.to_numpy()]
+    if len(pred) == len(table):
+        prediction_rows = pred[valid.to_numpy()]
+    elif len(pred) == len(out):
+        prediction_rows = pred
+    else:
+        raise ValueError(f"prediction rows ({len(pred)}) do not match table ({len(table)}) or valid rows ({len(out)})")
+    out[columns] = prediction_rows
     cfg.PREDICTIONS_DIR.mkdir(parents=True, exist_ok=True)
     out.to_parquet(cfg.PREDICTIONS_DIR / f"{model}_validation_2025.parquet", index=False)
     print(f"{len(out):,} prediction rows -> {cfg.PREDICTIONS_DIR}")

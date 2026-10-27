@@ -1,7 +1,7 @@
 # Probabilistic Station-Level Demand Forecasting for Capital Bikeshare
 
 **Course:** MSML 612 PCS1 (Deep Learning), Fall 2026 | **Group 2:** Dylan Boone, Dhanraj Nandurkar
-**Repository:** https://github.com/dan0003umd/bikeshare-forecasting | **Last updated:** Oct 26, 2026
+**Repository:** https://github.com/dan0003umd/bikeshare-forecasting | **Last updated:** Oct 27, 2026
 
 ## 1. What this project does
 
@@ -31,17 +31,17 @@ Legend: [x] done and checked, [~] code written, not yet run on real data, [ ] no
 |---|---|---|
 | Proposal | [x] | Submitted, 10/10 |
 | Repository, environment, GPU check | [x] | Python 3.11 venv, PyTorch CUDA build, `check_env` shows the GPU |
-| Trip download script | [~] | `src/download_trips.py` |
-| Station info download script | [~] | `src/download_station_info.py` |
-| Hourly station table builder | [~] | `src/build_hourly.py`; self-checks pass (`pytest`: 2 passed) |
-| Weather (observed + 1-day-ahead forecast) | [ ] | Plan in section 4 |
-| Calendar features (holidays, events) | [ ] | |
-| Metrics (pinball, CRPS, coverage, MAE) | [ ] | One shared implementation for all models |
-| Baselines: seasonal naive, Negative Binomial, XGBoost, LSTM | [ ] | |
-| Transformer (adapted Hugging Face Time Series Transformer) | [ ] | |
-| Chronos-2 zero-shot baseline | [ ] | |
-| Ablations and event-day analysis | [ ] | |
-| Interim report (due Oct 30) | [ ] | |
+| Trip download script | [x] | `src/download_trips.py`; 45 archives through 2026-09 are locally available |
+| Station info download script | [x] | `src/download_station_info.py` |
+| Hourly station table builder | [x] | `src/build_hourly.py`; 50-station table and data-quality audit built |
+| Weather (observed + 1-day-ahead forecast) | [~] | Observed-weather Oracle completed; Previous Runs forecast-weather coverage is incomplete before 2025 |
+| Calendar features (holidays, events) | [x] | Local calendar, US holiday, and event flags are in `model_table.parquet` |
+| Metrics (pinball, CRPS, coverage, MAE) | [x] | One shared implementation for all models |
+| Baselines: seasonal naive, Negative Binomial, XGBoost, LSTM | [~] | Both seasonal variants, NB, and shared 19-quantile XGBoost complete; LSTM intentionally deferred to Dylan |
+| Transformer (adapted Hugging Face Time Series Transformer) | [x] | Daily-stride embedding/no-embedding and observed-weather Oracle ablations complete |
+| Chronos-2 zero-shot baseline | [x] | Completed on fixed 10-station x 60-day 2025 validation subsample |
+| Ablations and event-day analysis | [~] | Embedding/weather ablations complete; event-day analysis remains |
+| Interim report (due Oct 30) | [~] | Evidence package and reproducibility commands are present; narrative submission remains |
 | Final report | [ ] | |
 
 Update this table whenever something changes, and log the work in `CONTRIBUTIONS.md`.
@@ -135,7 +135,7 @@ On the tested laptop (CUDA 13.1 driver) this was:
 
     pip install -r requirements.txt
     python -m src.check_env               # versions; "cuda ready: True" if a GPU is available
-    python -m pytest -q                   # expect: 2 passed
+    python -m pytest -q                   # expect: 8 passed
 
 **Step 5: download the data**
 
