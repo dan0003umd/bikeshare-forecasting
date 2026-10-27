@@ -2,18 +2,22 @@
 
 All full-window rows below are 2025 validation results on the same 435,600 check-out station-hours: 50 stations x 363 local days x 24 hours. This validation period was also used for transformer early stopping and tuning; these are not 2026 test results.
 
-| model | pinball_loss | crps | coverage_90 | median_mae | n_observations |
-|---|---|---|---|---|---|
-| xgboost_shared_quantile | 0.5644 | 1.0520 | 0.900 | 1.5148 | 435600 |
-| hf_transformer_daily_embed_observed_weather_oracle | 0.5653 | 1.0536 | 0.949 | 1.5108 | 435600 |
-| hf_transformer_daily_embed_noweather | 0.5755 | 1.0727 | 0.939 | 1.5426 | 435600 |
-| hf_transformer_daily_noembed_noweather | 0.5770 | 1.0753 | 0.949 | 1.5419 | 435600 |
-| hf_transformer_negative_binomial | 0.6345 | 1.1819 | 0.933 | 1.6922 | 435600 |
-| seasonal_naive_rolling_8week | 0.6659 | 1.2358 | 0.783 | 1.7306 | 435600 |
-| seasonal_naive_frozen_train_8week | 0.7492 | 1.3884 | 0.761 | 1.9293 | 435600 |
-| per_station_negative_binomial | 0.8157 | 1.5178 | 0.960 | 2.1441 | 435600 |
+| model | features | pinball_loss | crps | coverage_90 | median_mae | n_observations |
+|---|---|---|---|---|---|---|
+| xgboost_shared_quantile | Lagged check-outs (1, 2, 3, 24, 168 hours), local calendar/holiday/event features, station code; no observed or forecast weather | 0.5644 | 1.0520 | 0.900 | 1.5148 | 435600 |
+| hf_transformer_daily_embed_observed_weather_oracle | 336 check-out history values, local calendar/holiday/event features, station embedding, realized temperature/precipitation/wind (ORACLE) | 0.5653 | 1.0536 | 0.949 | 1.5108 | 435600 |
+| hf_transformer_daily_embed_noweather | 336 check-out history values, local calendar/holiday/event features, station embedding; no weather | 0.5755 | 1.0727 | 0.939 | 1.5426 | 435600 |
+| hf_transformer_daily_noembed_noweather | 336 check-out history values, local calendar/holiday/event features; no station embedding or weather | 0.5770 | 1.0753 | 0.949 | 1.5419 | 435600 |
+| hf_transformer_negative_binomial | 336 check-out history values, local calendar/holiday/event features, station embedding; no weather | 0.6345 | 1.1819 | 0.933 | 1.6922 | 435600 |
+| seasonal_naive_rolling_8week | Previous 8 same-station weekday/hour demand values; no weather | 0.6659 | 1.2358 | 0.783 | 1.7306 | 435600 |
+| seasonal_naive_frozen_train_8week | Last 8 pre-2025 same-station weekday/hour demand values; no weather | 0.7492 | 1.3884 | 0.761 | 1.9293 | 435600 |
+| per_station_negative_binomial | Cyclic hour, weekday, and month calendar features; no weather | 0.8157 | 1.5178 | 0.960 | 2.1441 | 435600 |
 
 Pinball loss is averaged over the fixed 19 quantiles (0.05--0.95 by 0.05). CRPS is approximated as twice the trapezoidal integral of pinball loss across that grid, so it is related to, not independent of, pinball loss.
+
+## Quantile construction
+
+Seasonal-naive quantiles are empirical quantiles of their eight historical demand values. The per-station Negative Binomial uses analytic inverse-CDF quantiles. XGBoost is one multi-quantile `reg:quantileerror` model trained directly for all 19 levels. Transformer quantiles are empirical quantiles of 100 generated Negative Binomial samples. Chronos-2 supplies native quantiles, interpolated to the common 19-level grid when necessary.
 
 `observed_weather_oracle` rows use realized future weather, not an operational forecast; they are explicitly non-deployable. Only check-outs have been modeled and scored so far; return-demand results are not available.
 
@@ -21,13 +25,19 @@ No saved scored prediction target falls in the local 2026 test period (the final
 
 ## Paired day-bootstrap comparisons
 
-Each comparison is A minus B in pinball loss. The 95% percentile intervals use 10,000 paired bootstrap resamples of the 363 local dates (not individual station-hours). Negative values favour A.
+Each comparison is A minus B for the named metric. The 95% percentile intervals use 10,000 paired bootstrap resamples of the 363 local dates (not individual station-hours). Negative values favour A.
 
-| comparison | difference_pinball_a_minus_b | ci95_low | ci95_high | days | interpretation |
-|---|---|---|---|---|---|
-| daily_embed_noweather_minus_rolling_seasonal | -0.0904 | -0.1019 | -0.0796 | 363 | distinguishable from zero |
-| daily_embed_noweather_minus_daily_noembed_noweather | -0.0015 | -0.0046 | 0.0016 | 363 | not distinguishable from zero |
-| daily_embed_noweather_minus_observed_weather_oracle | 0.0102 | 0.0040 | 0.0172 | 363 | distinguishable from zero |
+| comparison | metric | difference_a_minus_b | ci95_low | ci95_high | days | interpretation |
+|---|---|---|---|---|---|---|
+| daily_embed_noweather_minus_rolling_seasonal | pinball | -0.0904 | -0.1019 | -0.0796 | 363 | distinguishable from zero |
+| daily_embed_noweather_minus_daily_noembed_noweather | pinball | -0.0015 | -0.0046 | 0.0016 | 363 | not distinguishable from zero |
+| daily_embed_noweather_minus_observed_weather_oracle | pinball | 0.0102 | 0.0040 | 0.0172 | 363 | distinguishable from zero |
+| xgboost_minus_daily_embed_noweather | pinball | -0.0112 | -0.0166 | -0.0063 | 363 | distinguishable from zero |
+| xgboost_minus_daily_embed_noweather | median_mae | -0.0278 | -0.0422 | -0.0149 | 363 | distinguishable from zero |
+
+## Transformer sampling variation
+
+The sampled transformer was regenerated over all 435,600 validation rows with seed 43 instead of seed 42. Across all 19 quantiles, the mean absolute prediction difference was 0.3061; for the median it was 0.2578. Pinball changed by +0.000022, and median MAE by -0.000715.
 
 ## Chronos-2 fixed subsample
 

@@ -5,6 +5,7 @@ import pandas as pd
 
 from . import config as cfg
 from .calendar_features import add_calendar_features
+from .splits import development_end_utc
 
 
 def assemble_model_table() -> tuple[pd.DataFrame, dict]:
@@ -28,16 +29,25 @@ def assemble_model_table() -> tuple[pd.DataFrame, dict]:
     selected = table[["station_id", "capacity", "lat", "lon"]].drop_duplicates("station_id")
     selected.to_csv(cfg.PROCESSED_DIR / "station_metadata_mapping.csv", index=False)
 
+    cutoff = development_end_utc()
+    development = table[pd.to_datetime(table.ts_utc, utc=True) < cutoff].copy()
+    locked_test = table[pd.to_datetime(table.ts_utc, utc=True) >= cutoff].copy()
     report = {
-        "rows": len(table),
+        "rows": len(development),
+        "locked_test_rows": len(locked_test),
         "stations": int(table["station_id"].nunique()),
         "weather_missing_rows": int(table[["temperature_2m", "precipitation", "wind_speed_10m"]].isna().any(axis=1).sum()),
         "metadata_matched_stations": int(selected["capacity"].notna().sum()),
         "metadata_unmatched_stations": int(selected["capacity"].isna().sum()),
     }
-    table.to_parquet(cfg.PROCESSED_DIR / "model_table.parquet", index=False)
+    # Keep test rows physically separate so development loaders cannot inspect
+    # them accidentally. The test file remains ignored by Git and is only for
+    # an explicit final evaluation.
+    cfg.LOCKED_TEST_DIR.mkdir(parents=True, exist_ok=True)
+    development.to_parquet(cfg.MODEL_TABLE_PATH, index=False)
+    locked_test.to_parquet(cfg.LOCKED_TEST_MODEL_TABLE_PATH, index=False)
     print(report)
-    return table, report
+    return development, report
 
 
 if __name__ == "__main__":

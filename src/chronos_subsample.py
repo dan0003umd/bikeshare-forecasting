@@ -8,16 +8,13 @@ import pandas as pd
 
 from . import config as cfg
 from .metrics import score
+from .splits import load_development_model_table
 from .transformer_model import PAST_LENGTH, PREDICTION_LENGTH
 
 
 def load_pretest_table() -> pd.DataFrame:
-    """Parquet predicate prevents this script from reading 2026 test rows."""
-    cutoff = pd.Timestamp(cfg.VALID_END).tz_localize(cfg.LOCAL_TZ).tz_convert("UTC")
-    table = pd.read_parquet(cfg.PROCESSED_DIR / "model_table.parquet", filters=[("ts_utc", "<", cutoff)])
-    if (pd.to_datetime(table.ts_utc, utc=True) >= cutoff).any():
-        raise RuntimeError("pre-test table unexpectedly contains 2026 rows")
-    return table.sort_values(["station_id", "ts_utc"]).reset_index(drop=True)
+    """Use the shared guarded loader, then establish deterministic station order."""
+    return load_development_model_table().sort_values(["station_id", "ts_utc"]).reset_index(drop=True)
 
 
 def fixed_subsample(table: pd.DataFrame, stations: int = 10, days: int = 60) -> tuple[list[str], list[object]]:

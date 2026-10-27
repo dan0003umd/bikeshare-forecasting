@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 
 from . import config as cfg
+from .splits import load_development_model_table
 
 
 def _style():
@@ -113,7 +114,7 @@ def loss_curve_if_present() -> None:
 
 def main() -> None:
     cfg.REPORTS_DIR.mkdir(parents=True, exist_ok=True)
-    table = pd.read_parquet(cfg.PROCESSED_DIR / "model_table.parquet")
+    table = load_development_model_table()
     results = pd.read_csv(cfg.REPORTS_DIR / "results_validation_2025.csv")
     eda_hour_of_week(table)
     calibration_chart(results)

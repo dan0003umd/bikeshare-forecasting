@@ -17,6 +17,18 @@ def _table(frame: pd.DataFrame, columns: list[str]) -> str:
     return "\n".join([header, rule, *rows])
 
 
+FEATURES = {
+    "seasonal_naive_rolling_8week": "Previous 8 same-station weekday/hour demand values; no weather",
+    "seasonal_naive_frozen_train_8week": "Last 8 pre-2025 same-station weekday/hour demand values; no weather",
+    "per_station_negative_binomial": "Cyclic hour, weekday, and month calendar features; no weather",
+    "hf_transformer_negative_binomial": "336 check-out history values, local calendar/holiday/event features, station embedding; no weather",
+    "hf_transformer_daily_embed_noweather": "336 check-out history values, local calendar/holiday/event features, station embedding; no weather",
+    "hf_transformer_daily_noembed_noweather": "336 check-out history values, local calendar/holiday/event features; no station embedding or weather",
+    "hf_transformer_daily_embed_observed_weather_oracle": "336 check-out history values, local calendar/holiday/event features, station embedding, realized temperature/precipitation/wind (ORACLE)",
+    "xgboost_shared_quantile": "Lagged check-outs (1, 2, 3, 24, 168 hours), local calendar/holiday/event features, station code; no observed or forecast weather",
+}
+
+
 def main() -> None:
     cfg.REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     results = pd.read_csv(cfg.REPORTS_DIR / "results_validation_2025.csv")
@@ -27,25 +39,33 @@ def main() -> None:
     display = results.assign(
         pinball_loss=results.pinball_loss.map("{:.4f}".format), crps=results.crps.map("{:.4f}".format),
         coverage_90=results.coverage_90.map("{:.3f}".format), median_mae=results.median_mae.map("{:.4f}".format),
+        features=results.model.map(FEATURES),
     )
     results_md = ["# Validation Results (2025)", "",
                   "All full-window rows below are 2025 validation results on the same 435,600 check-out station-hours: 50 stations x 363 local days x 24 hours. This validation period was also used for transformer early stopping and tuning; these are not 2026 test results.", "",
-                  _table(display, ["model", "pinball_loss", "crps", "coverage_90", "median_mae", "n_observations"]), "",
+                  _table(display, ["model", "features", "pinball_loss", "crps", "coverage_90", "median_mae", "n_observations"]), "",
                   "Pinball loss is averaged over the fixed 19 quantiles (0.05--0.95 by 0.05). CRPS is approximated as twice the trapezoidal integral of pinball loss across that grid, so it is related to, not independent of, pinball loss.",
+                  "", "## Quantile construction", "",
+                  "Seasonal-naive quantiles are empirical quantiles of their eight historical demand values. The per-station Negative Binomial uses analytic inverse-CDF quantiles. XGBoost is one multi-quantile `reg:quantileerror` model trained directly for all 19 levels. Transformer quantiles are empirical quantiles of 100 generated Negative Binomial samples. Chronos-2 supplies native quantiles, interpolated to the common 19-level grid when necessary.",
                   "", "`observed_weather_oracle` rows use realized future weather, not an operational forecast; they are explicitly non-deployable. Only check-outs have been modeled and scored so far; return-demand results are not available.",
                   "", "No saved scored prediction target falls in the local 2026 test period (the final local-2025 evening has a 2026 UTC timestamp). However, the earlier baseline/transformer runs loaded an assembled table that contains later archives before applying their split masks; their scores did not use local-2026 labels, but a literal claim that those historical jobs never read a 2026 row would be false. The new XGBoost and Chronos scripts use Parquet filters that prevent local-2026 rows from being read."]
     bootstrap_path = cfg.REPORTS_DIR / "paired_bootstrap_validation_2025.csv"
     if bootstrap_path.exists():
         bootstrap = pd.read_csv(bootstrap_path).assign(
-            difference_pinball_a_minus_b=lambda x: x.difference_pinball_a_minus_b.map("{:.4f}".format),
+            difference_a_minus_b=lambda x: x.difference_a_minus_b.map("{:.4f}".format),
             ci95_low=lambda x: x.ci95_low.map("{:.4f}".format),
             ci95_high=lambda x: x.ci95_high.map("{:.4f}".format),
             interpretation=lambda x: x.ci_includes_zero.map(
                 lambda includes: "not distinguishable from zero" if includes else "distinguishable from zero"),
         )
         results_md += ["", "## Paired day-bootstrap comparisons", "",
-                       "Each comparison is A minus B in pinball loss. The 95% percentile intervals use 10,000 paired bootstrap resamples of the 363 local dates (not individual station-hours). Negative values favour A.", "",
-                       _table(bootstrap, ["comparison", "difference_pinball_a_minus_b", "ci95_low", "ci95_high", "days", "interpretation"])]
+                       "Each comparison is A minus B for the named metric. The 95% percentile intervals use 10,000 paired bootstrap resamples of the 363 local dates (not individual station-hours). Negative values favour A.", "",
+                       _table(bootstrap, ["comparison", "metric", "difference_a_minus_b", "ci95_low", "ci95_high", "days", "interpretation"])]
+    sampling_path = cfg.REPORTS_DIR / "transformer_sampling_audit.csv"
+    if sampling_path.exists():
+        sampling = pd.read_csv(sampling_path).iloc[0]
+        results_md += ["", "## Transformer sampling variation", "",
+                       f"The sampled transformer was regenerated over all {int(sampling.rows):,} validation rows with seed {int(sampling.seed_b)} instead of seed {int(sampling.seed_a)}. Across all 19 quantiles, the mean absolute prediction difference was {sampling.mean_absolute_quantile_difference:.4f}; for the median it was {sampling.q50_mean_absolute_difference:.4f}. Pinball changed by {sampling.pinball_difference_seed43_minus_seed42:+.6f}, and median MAE by {sampling.median_mae_difference_seed43_minus_seed42:+.6f}."]
     chronos_path = cfg.REPORTS_DIR / "chronos_subsample_validation_2025.csv"
     if chronos_path.exists():
         chronos = pd.read_csv(chronos_path).sort_values("pinball_loss").assign(
@@ -77,6 +97,19 @@ def main() -> None:
     missing_end_share = 100 * report["missing_end_station"] / report["rows_read"]
     quality = f"""# Data Quality\n\n- Input monthly archives: {len(report['months'])} ({report['months'][0]} through {report['months'][-1]}).\n- Rows read: {report['rows_read']:,}; table rows: {report['table_rows']:,}.\n- Selected stations: {report['stations_selected']} of {report['stations_seen']} seen ({report['stations_active_whole_period']} active across the full observed window).\n- Rows with unparseable timestamps: {report['bad_timestamps']:,}; within-file duplicate rides removed: {report['within_file_duplicates']:,}; cross-file boundary duplicates removed: {report['cross_file_duplicates']:,}.\n- Trips lacking a start station: {report['missing_start_station']:,} ({missing_start_share:.2f}% of rows read); lacking an end station: {report['missing_end_station']:,} ({missing_end_share:.2f}%). Demand counts only trip sides with a station: check-outs require a start station and returns require an end station.\n- Trips with end before start: {report['end_before_start']:,}; these are reported for audit but not discarded by the present aggregation.\n- Daylight saving: the repeated November local hour is assigned to the first occurrence and both physical hours receive `dst_overlap=True`. There are 300 flagged station-hours in the built table; evaluation excludes DST/non-24-hour local days.\n\nStations are ranked by check-outs strictly before 2025-01-01, after requiring activity near both ends of the downloaded period. The top 50 are then zero-filled at every UTC hour.\n"""
     (cfg.REPORTS_DIR / "data_quality.md").write_text(quality, encoding="utf-8")
+
+    locked_rows = "not yet separated"
+    if cfg.LOCKED_TEST_MODEL_TABLE_PATH.exists():
+        locked_rows = f"{len(pd.read_parquet(cfg.LOCKED_TEST_MODEL_TABLE_PATH, columns=['ts_utc'])):,}"
+    integrity = f"""# Split Integrity and Locked Test Data
+
+- Station selection uses only rows before `{cfg.SELECTION_END}`; this is stricter than the 2026 boundary.
+- The development `model_table.parquet` contains only timestamps before local `{cfg.TEST_START}`. `{locked_rows}` local-2026 rows are physically stored in the ignored locked file `data/processed/locked_test_2026/model_table.parquet`.
+- Every training, tuning, scoring, and figure entrypoint loads this table through `load_development_model_table`, which applies a Parquet predicate and raises if a local-2026 row is present.
+- Transformer observed-weather standardization computes mean and standard deviation from the 2023--2024 training mask only. Calendar features need no fitted scaler; XGBoost uses unscaled lag/calendar inputs; Chronos-2 is zero-shot and fits no project-level normalization.
+- `tests/test_metrics_splits.py` verifies both the predicate/guard and that each development entrypoint routes through the guarded loader.
+"""
+    (cfg.REPORTS_DIR / "split_integrity.md").write_text(integrity, encoding="utf-8")
 
     history = """# Forecast-Origin History Available to Each Model
 
@@ -125,6 +158,12 @@ All models are scored on the same 24 future hours for each of 363 eligible local
         chronos_score = pd.read_csv(cfg.REPORTS_DIR / "chronos_subsample_validation_2025.csv").query("model == 'chronos2_zero_shot'").iloc[0]
         summary += (f"- Chronos-2 zero-shot was evaluated only on the fixed 14,400-row 2025 validation subsample; "
                     f"its pinball loss was {chronos_score.pinball_loss:.4f}.\n")
+    sampling_path = cfg.REPORTS_DIR / "transformer_sampling_audit.csv"
+    if sampling_path.exists():
+        sampling = pd.read_csv(sampling_path).iloc[0]
+        summary += (f"- Across the seed-{int(sampling.seed_a)} and seed-{int(sampling.seed_b)} transformer sampling runs, the mean absolute "
+                    f"difference across quantile values was {sampling.mean_absolute_quantile_difference:.4f}; pinball changed by "
+                    f"{sampling.pinball_difference_seed43_minus_seed42:+.4f} and median MAE by {sampling.median_mae_difference_seed43_minus_seed42:+.4f}.\n")
     summary += ("- No saved scored target falls in the local 2026 test period (the final local-2025 evening has a 2026 UTC timestamp). "
                 "Historical baseline/transformer scripts did load an assembled table containing later archives before masking to 2025, "
                 "so the project cannot claim that no 2026 row was ever read; the new XGBoost and Chronos loaders use pre-2026 Parquet predicates.\n")

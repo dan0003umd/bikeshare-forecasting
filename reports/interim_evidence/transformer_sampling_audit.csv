@@ -1,0 +1,2 @@
+model,seed_a,seed_b,rows,mean_absolute_quantile_difference,q50_mean_absolute_difference,pinball_seed42,pinball_seed43,pinball_difference_seed43_minus_seed42,median_mae_seed42,median_mae_seed43,median_mae_difference_seed43_minus_seed42
+hf_transformer_daily_embed_noweather,42,43,435600,0.3061407496012759,0.2577812213039486,0.575524520020782,0.5755465887946449,2.20687738629044e-05,1.542636593204775,1.5419214876033058,-0.0007151056014691459

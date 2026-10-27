@@ -8,4 +8,5 @@
 - Daily-stride transformer ablations used seed 42 and patience-3 early stopping. XGBoost and Chronos-2 have now been evaluated; the LSTM is intentionally deferred to Dylan.
 - The shared XGBoost quantile baseline, fit only on 2023--2024 data, has pinball loss 0.5644, CRPS 1.0520, and median MAE 1.5148; its fit took 3.19 minutes.
 - Chronos-2 zero-shot was evaluated only on the fixed 14,400-row 2025 validation subsample; its pinball loss was 0.5329.
+- Across the seed-42 and seed-43 transformer sampling runs, the mean absolute difference across quantile values was 0.3061; pinball changed by +0.0000 and median MAE by -0.0007.
 - No saved scored target falls in the local 2026 test period (the final local-2025 evening has a 2026 UTC timestamp). Historical baseline/transformer scripts did load an assembled table containing later archives before masking to 2025, so the project cannot claim that no 2026 row was ever read; the new XGBoost and Chronos loaders use pre-2026 Parquet predicates.

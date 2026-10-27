@@ -12,19 +12,15 @@ from . import config as cfg
 from .baselines import save_predictions, save_result
 from .forecast_windows import validation_window_mask, validation_window_summary
 from .metrics import score
-from .splits import split_mask
+from .splits import load_development_model_table, split_mask
 
 
 LAGS = (1, 2, 3, 24, 168)
 
 
 def load_pretest_table() -> pd.DataFrame:
-    """Push down a pre-2026 parquet filter so this experiment never reads test rows."""
-    cutoff = pd.Timestamp(cfg.VALID_END).tz_localize(cfg.LOCAL_TZ).tz_convert("UTC")
-    table = pd.read_parquet(cfg.PROCESSED_DIR / "model_table.parquet", filters=[("ts_utc", "<", cutoff)])
-    if (pd.to_datetime(table.ts_utc, utc=True) >= cutoff).any():
-        raise RuntimeError("pre-test table unexpectedly contains 2026 rows")
-    return table.sort_values(["station_id", "ts_utc"]).reset_index(drop=True)
+    """Use the shared guarded loader, then establish deterministic station order."""
+    return load_development_model_table().sort_values(["station_id", "ts_utc"]).reset_index(drop=True)
 
 
 def xgboost_features(table: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:

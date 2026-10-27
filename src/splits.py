@@ -17,6 +17,28 @@ def _utc_boundary(value: str) -> pd.Timestamp:
     return pd.Timestamp(value).tz_localize(cfg.LOCAL_TZ).tz_convert("UTC")
 
 
+def development_end_utc() -> pd.Timestamp:
+    """First instant of the locked local-2026 test period, expressed in UTC."""
+    return _utc_boundary(cfg.TEST_START)
+
+
+def assert_no_locked_test_rows(table: pd.DataFrame) -> None:
+    """Raise if a development loader receives any local-2026 test row."""
+    timestamps = pd.to_datetime(table["ts_utc"], utc=True)
+    if (timestamps >= development_end_utc()).any():
+        raise AssertionError("development loader received a locked local-2026 test row")
+
+
+def load_development_model_table(*, columns: list[str] | None = None) -> pd.DataFrame:
+    """Read only pre-test rows and verify the invariant after Parquet pushdown."""
+    table = pd.read_parquet(
+        cfg.MODEL_TABLE_PATH, columns=columns,
+        filters=[("ts_utc", "<", development_end_utc())],
+    )
+    assert_no_locked_test_rows(table)
+    return table
+
+
 def split_mask(ts_utc: pd.Series, split: str, *, final: bool = False) -> pd.Series:
     """Return a boolean chronological split mask; gate test rows behind ``final``."""
     if not isinstance(ts_utc.dtype, pd.DatetimeTZDtype):

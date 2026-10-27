@@ -8,6 +8,9 @@ EXTERNAL_DIR = ROOT / "data" / "external"
 REPORTS_DIR = ROOT / "reports" / "interim_evidence"
 CHECKPOINTS_DIR = ROOT / "checkpoints"
 PREDICTIONS_DIR = ROOT / "data" / "predictions"
+MODEL_TABLE_PATH = PROCESSED_DIR / "model_table.parquet"
+LOCKED_TEST_DIR = PROCESSED_DIR / "locked_test_2026"
+LOCKED_TEST_MODEL_TABLE_PATH = LOCKED_TEST_DIR / "model_table.parquet"
 
 # Trip files used: monthly files from this (year, month) up to the latest published month.
 START = (2023, 1)

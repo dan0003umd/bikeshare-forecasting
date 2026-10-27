@@ -11,6 +11,7 @@ from .baselines import save_result
 from .forecast_windows import validation_window_summary
 from .metrics import score
 from .train_transformer import prepare_datasets, set_seed
+from .splits import load_development_model_table
 
 
 def validation_metadata(table: pd.DataFrame, pairs: list[tuple[int, int]]) -> pd.DataFrame:
@@ -27,13 +28,15 @@ def main():
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--checkpoint", default="transformer_last.pt", help="checkpoint filename under checkpoints/")
     parser.add_argument("--model-name", default="hf_transformer_negative_binomial")
+    parser.add_argument("--seed", type=int, default=cfg.SEED, help="generation seed; use a different value only for sampling audits")
+    parser.add_argument("--skip-results-table", action="store_true", help="persist predictions without adding an experiment row")
     args = parser.parse_args()
     import torch
     from torch.utils.data import DataLoader
     from transformers import TimeSeriesTransformerConfig, TimeSeriesTransformerForPrediction
-    set_seed()
+    set_seed(args.seed)
     checkpoint = torch.load(cfg.CHECKPOINTS_DIR / args.checkpoint, map_location="cpu", weights_only=False)
-    table = pd.read_parquet(cfg.PROCESSED_DIR / "model_table.parquet")
+    table = load_development_model_table()
     # Training used weekly validation windows to fit in the first run; reporting
     # uses every eligible 2025 day, exactly matching every other model.
     use_embedding = checkpoint.get("station_embedding", True)
@@ -67,7 +70,8 @@ def main():
     path = cfg.PREDICTIONS_DIR / f"{args.model_name}_validation_2025.parquet"
     prediction.to_parquet(path, index=False)
     print(f"{len(prediction):,} prediction rows -> {path}")
-    save_result(result)
+    if not args.skip_results_table:
+        save_result(result)
 
 
 if __name__ == "__main__":

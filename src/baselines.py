@@ -11,7 +11,7 @@ import statsmodels.api as sm
 from . import config as cfg
 from .forecast_windows import validation_window_mask, validation_window_summary
 from .metrics import score
-from .splits import split_mask
+from .splits import load_development_model_table, split_mask
 
 
 def _seasonal_data(table: pd.DataFrame):
@@ -147,7 +147,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", choices=["seasonal_rolling", "seasonal_frozen", "negative_binomial"], default="seasonal_rolling")
     args = parser.parse_args()
-    table = pd.read_parquet(cfg.PROCESSED_DIR / "model_table.parquet")
+    table = load_development_model_table()
     if args.model == "seasonal_rolling":
         save_result(evaluate_seasonal_naive(table, "rolling"))
     elif args.model == "seasonal_frozen":

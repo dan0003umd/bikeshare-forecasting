@@ -10,6 +10,7 @@ import pandas as pd
 
 from . import config as cfg
 from .transformer_model import PAST_LENGTH, PREDICTION_LENGTH, daily_starts, time_features, transformer_config
+from .splits import load_development_model_table
 
 
 def set_seed(seed=cfg.SEED):
@@ -87,7 +88,7 @@ def main():
     from torch.utils.data import DataLoader
     from transformers import TimeSeriesTransformerForPrediction
     set_seed()
-    table = pd.read_parquet(cfg.PROCESSED_DIR / "model_table.parquet")
+    table = load_development_model_table()
     use_embedding = not args.no_station_embedding
     train_set, val_set, n_stations, n_features = prepare_datasets(
         table, args.train_every_n_days, args.validation_every_n_days, use_embedding, args.observed_weather_oracle)
