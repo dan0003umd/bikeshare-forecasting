@@ -6,8 +6,6 @@ import numpy as np
 import pandas as pd
 
 from . import config as cfg
-from .baselines import seasonal_naive_quantiles
-from .forecast_windows import validation_window_mask
 
 
 def _style():
@@ -41,12 +39,15 @@ def calibration_chart(results: pd.DataFrame) -> None:
 
 def seasonal_sample_forecasts(table: pd.DataFrame) -> None:
     """Plot weekday, weekend, and rainy 24-hour samples for the busy station."""
-    prediction = seasonal_naive_quantiles(table)
-    mask = validation_window_mask(table)
-    local_date = table.ts_utc.dt.tz_convert(cfg.LOCAL_TZ).dt.date
+    path = cfg.PREDICTIONS_DIR / "seasonal_naive_frozen_train_8week_validation_2025.parquet"
+    prediction = pd.read_parquet(path)
+    prediction = prediction.merge(table[["station_id", "ts_utc", "precipitation"]], on=["station_id", "ts_utc"],
+                                  how="left", validate="one_to_one")
+    local_date = prediction.ts_utc.dt.tz_convert(cfg.LOCAL_TZ).dt.date
     train = table.ts_utc < pd.Timestamp("2025-01-01", tz=cfg.LOCAL_TZ).tz_convert("UTC")
     station = table.loc[train].groupby("station_id").checkouts.sum().idxmax()
-    daily = table.loc[mask & table.station_id.eq(station)].assign(local_date=local_date[mask & table.station_id.eq(station)])
+    daily = prediction.loc[prediction.station_id.eq(station)].assign(local_date=local_date[prediction.station_id.eq(station)])
+    daily["weekday"] = daily.ts_utc.dt.tz_convert(cfg.LOCAL_TZ).dt.day_of_week
     daily = daily.groupby("local_date").agg(weekday=("weekday", "first"), precipitation=("precipitation", "sum"))
     weekday_day = daily.index[daily.weekday.lt(5)][0]
     weekend_day = daily.index[daily.weekday.ge(5)][0]
@@ -55,14 +56,11 @@ def seasonal_sample_forecasts(table: pd.DataFrame) -> None:
     _style()
     fig, axes = plt.subplots(3, 1, figsize=(10, 8), sharex=True)
     for ax, (sample_day, label) in zip(axes, samples):
-        take = mask & table.station_id.eq(station) & local_date.eq(sample_day)
-        rows = table.loc[take].sort_values("ts_utc")
-        pos = rows.index.to_numpy()
-        qs = prediction[pos]
+        rows = prediction.loc[prediction.station_id.eq(station) & local_date.eq(sample_day)].sort_values("ts_utc")
         hours = rows.ts_utc.dt.tz_convert(cfg.LOCAL_TZ).dt.hour
-        ax.fill_between(hours, qs[:, 0], qs[:, -1], color="#72b7b2", alpha=.35, label="5--95%" if ax is axes[0] else None)
-        ax.plot(hours, qs[:, 9], color="#4c78a8", label="median" if ax is axes[0] else None)
-        ax.scatter(hours, rows.checkouts, s=12, color="#e45756", label="actual" if ax is axes[0] else None)
+        ax.fill_between(hours, rows.q05, rows.q95, color="#72b7b2", alpha=.35, label="5--95%" if ax is axes[0] else None)
+        ax.plot(hours, rows.q50, color="#4c78a8", label="median" if ax is axes[0] else None)
+        ax.scatter(hours, rows.actual, s=12, color="#e45756", label="actual" if ax is axes[0] else None)
         ax.set_ylabel(f"{station}\ncheck-outs")
         ax.set_title(f"{label.title()} day: {sample_day}", fontsize=10)
     axes[0].legend(loc="upper right")
@@ -73,32 +71,44 @@ def seasonal_sample_forecasts(table: pd.DataFrame) -> None:
     plt.close()
 
 
-def error_by_hour_available_predictions(table: pd.DataFrame) -> None:
-    """Plot retained per-row error evidence; transformer trajectories were not saved."""
-    prediction = seasonal_naive_quantiles(table)
-    mask = validation_window_mask(table)
-    frame = table.loc[mask, ["hour", "checkouts"]].copy()
-    frame["seasonal_naive_8week"] = np.abs(frame.checkouts.to_numpy() - prediction[mask.to_numpy(), 9])
+def error_by_hour_from_saved_predictions() -> None:
+    """Use persisted per-row predictions for every evaluated model."""
+    paths = sorted(cfg.PREDICTIONS_DIR.glob("*_validation_2025.parquet"))
+    if not paths:
+        raise FileNotFoundError("No saved predictions. Run the evaluators before making figures.")
+    frames = []
+    for path in paths:
+        frame = pd.read_parquet(path)
+        frame["model"] = path.name.removesuffix("_validation_2025.parquet")
+        frame["hour"] = frame.ts_utc.dt.tz_convert(cfg.LOCAL_TZ).dt.hour
+        frame["absolute_error"] = np.abs(frame.actual - frame.q50)
+        frames.append(frame)
+    frame = pd.concat(frames, ignore_index=True)
     _style()
-    ax = frame.groupby("hour")["seasonal_naive_8week"].mean().plot(marker="o", figsize=(8, 4))
-    ax.set(title="Validation median absolute error by local hour (retained predictions)",
-           xlabel="Local hour", ylabel="MAE")
+    summary = frame.groupby(["hour", "model"]).absolute_error.mean().unstack("model")
+    ax = summary.plot(marker="o", figsize=(9, 4))
+    ax.set(title="Validation mean absolute error by local hour", xlabel="Local hour", ylabel="MAE")
     plt.tight_layout()
     plt.savefig(cfg.REPORTS_DIR / "error_by_hour_available_predictions.png", dpi=160)
     plt.close()
 
 
 def loss_curve_if_present() -> None:
-    path = cfg.REPORTS_DIR / "transformer_loss.csv"
-    if not path.exists():
-        return
-    log = pd.read_csv(path)
-    _style()
-    ax = log.plot(x="epoch", y=["train_loss", "validation_loss"], marker="o", figsize=(7, 4))
-    ax.set(title="Transformer training and validation loss", ylabel="Negative log likelihood")
-    plt.tight_layout()
-    plt.savefig(cfg.REPORTS_DIR / "transformer_loss.png", dpi=160)
-    plt.close()
+    for stem, title in [
+        ("transformer", "Initial weekly-stride transformer loss"),
+        ("transformer_daily_embed_noweather", "Daily-stride transformer loss (embeddings, no weather)"),
+        ("transformer_daily_embed_observed_weather_oracle", "Daily-stride transformer loss (observed-weather ORACLE)"),
+    ]:
+        path = cfg.REPORTS_DIR / f"{stem}_loss.csv"
+        if not path.exists():
+            continue
+        log = pd.read_csv(path)
+        _style()
+        ax = log.plot(x="epoch", y=["train_loss", "validation_loss"], marker="o", figsize=(7, 4))
+        ax.set(title=title, ylabel="Negative log likelihood")
+        plt.tight_layout()
+        plt.savefig(cfg.REPORTS_DIR / f"{stem}_loss.png", dpi=160)
+        plt.close()
 
 
 def main() -> None:
@@ -108,7 +118,7 @@ def main() -> None:
     eda_hour_of_week(table)
     calibration_chart(results)
     seasonal_sample_forecasts(table)
-    error_by_hour_available_predictions(table)
+    error_by_hour_from_saved_predictions()
     loss_curve_if_present()
     print(f"figures written to {cfg.REPORTS_DIR}")
 

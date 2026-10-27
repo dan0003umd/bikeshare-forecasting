@@ -14,13 +14,38 @@ from .metrics import score
 from .splits import split_mask
 
 
-def seasonal_naive_quantiles(table: pd.DataFrame, history_weeks: int = 8) -> np.ndarray:
-    """Same-hour-of-week empirical quantiles fit only on the 2023--24 split."""
+def _seasonal_data(table: pd.DataFrame):
     if not {"hour", "weekday", "checkouts"} <= set(table):
         raise ValueError("model table needs hour, weekday, and checkouts")
     data = table.sort_values(["station_id", "ts_utc"]).copy()
     data["hour_of_week"] = data["weekday"].astype(int) * 24 + data["hour"].astype(int)
-    grid = np.asarray(cfg.QUANTILES)
+    return data, np.asarray(cfg.QUANTILES)
+
+
+def seasonal_naive_rolling_quantiles(table: pd.DataFrame, history_weeks: int = 8) -> np.ndarray:
+    """Causal rolling same-hour-of-week quantiles from the preceding 8 weeks.
+
+    Each target sees only strictly earlier values in its station/hour-of-week
+    sequence.  Thus a later 2025 forecast may use earlier observed 2025 demand,
+    but never any value at or after its own forecast origin.
+    """
+    data, grid = _seasonal_data(table)
+    prediction = np.full((len(data), len(grid)), np.nan, dtype="float32")
+    grouped_indices = data.groupby(["station_id", "hour_of_week"], sort=False).indices
+    values = data["checkouts"].to_numpy(dtype=float)
+    for idx in grouped_indices.values():
+        idx = np.asarray(idx)
+        for position, target_idx in enumerate(idx):
+            history = values[idx[max(0, position - history_weeks):position]]
+            if len(history):
+                prediction[target_idx] = np.quantile(history, grid)
+    data[[f"q{int(q * 100):02d}" for q in grid]] = prediction
+    return data.sort_index()[[f"q{int(q * 100):02d}" for q in grid]].to_numpy()
+
+
+def seasonal_naive_frozen_quantiles(table: pd.DataFrame, history_weeks: int = 8) -> np.ndarray:
+    """Same-hour-of-week quantiles frozen at the 2024 training cutoff."""
+    data, grid = _seasonal_data(table)
     prediction = np.full((len(data), len(grid)), np.nan, dtype="float32")
     train = split_mask(data["ts_utc"], "train").to_numpy()
     # Freeze each station/hour-of-week distribution at the training cutoff.  In
@@ -35,11 +60,27 @@ def seasonal_naive_quantiles(table: pd.DataFrame, history_weeks: int = 8) -> np.
     return data.sort_index()[[f"q{int(q * 100):02d}" for q in grid]].to_numpy()
 
 
-def evaluate_seasonal_naive(table: pd.DataFrame) -> dict:
-    pred = seasonal_naive_quantiles(table)
+def save_predictions(table: pd.DataFrame, valid: pd.Series, pred: np.ndarray, model: str) -> None:
+    """Persist all 19 quantiles and truth locally; data/ is intentionally ignored."""
+    columns = [f"q{int(q * 100):02d}" for q in cfg.QUANTILES]
+    out = table.loc[valid, ["station_id", "ts_utc", "checkouts"]].rename(columns={"checkouts": "actual"}).copy()
+    out[columns] = pred[valid.to_numpy()]
+    cfg.PREDICTIONS_DIR.mkdir(parents=True, exist_ok=True)
+    out.to_parquet(cfg.PREDICTIONS_DIR / f"{model}_validation_2025.parquet", index=False)
+    print(f"{len(out):,} prediction rows -> {cfg.PREDICTIONS_DIR}")
+
+
+def evaluate_seasonal_naive(table: pd.DataFrame, variant: str) -> dict:
+    if variant == "rolling":
+        model, pred = "seasonal_naive_rolling_8week", seasonal_naive_rolling_quantiles(table)
+    elif variant == "frozen":
+        model, pred = "seasonal_naive_frozen_train_8week", seasonal_naive_frozen_quantiles(table)
+    else:
+        raise ValueError("variant must be rolling or frozen")
     mask = validation_window_mask(table)
     valid = mask & np.isfinite(pred).all(axis=1)
-    result = {"model": "seasonal_naive_8week", **score(table.loc[valid, "checkouts"], pred[valid])}
+    save_predictions(table, valid, pred, model)
+    result = {"model": model, **score(table.loc[valid, "checkouts"], pred[valid])}
     result.update(validation_window_summary(table))
     result["excluded_warmup_rows"] = int(mask.sum() - valid.sum())
     return result
@@ -76,6 +117,7 @@ def evaluate_negative_binomial(table: pd.DataFrame) -> dict:
         probability = size / (size + mu)
         pred[valid_idx] = nbinom.ppf(np.asarray(cfg.QUANTILES)[None, :], size, probability[:, None])
     valid = window_mask & np.isfinite(pred).all(axis=1)
+    save_predictions(table, valid, pred, "per_station_negative_binomial")
     result = {"model": "per_station_negative_binomial", **score(table.loc[valid, "checkouts"], pred[valid])}
     result.update(validation_window_summary(table))
     result["excluded_warmup_rows"] = int(window_mask.sum() - valid.sum())
@@ -87,6 +129,8 @@ def save_result(result: dict) -> pd.DataFrame:
     path = cfg.REPORTS_DIR / "results_validation_2025.csv"
     old = pd.read_csv(path) if path.exists() else pd.DataFrame()
     old = old[old.get("model", pd.Series(dtype=str)) != result["model"]] if len(old) else old
+    if result["model"] == "seasonal_naive_frozen_train_8week" and len(old):
+        old = old[old["model"] != "seasonal_naive_8week"]
     out = pd.concat([old, pd.DataFrame([result])], ignore_index=True)
     out.to_csv(path, index=False)
     print(out.to_string(index=False))
@@ -95,11 +139,13 @@ def save_result(result: dict) -> pd.DataFrame:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", choices=["seasonal_naive", "negative_binomial"], default="seasonal_naive")
+    parser.add_argument("--model", choices=["seasonal_rolling", "seasonal_frozen", "negative_binomial"], default="seasonal_rolling")
     args = parser.parse_args()
     table = pd.read_parquet(cfg.PROCESSED_DIR / "model_table.parquet")
-    if args.model == "seasonal_naive":
-        save_result(evaluate_seasonal_naive(table))
+    if args.model == "seasonal_rolling":
+        save_result(evaluate_seasonal_naive(table, "rolling"))
+    elif args.model == "seasonal_frozen":
+        save_result(evaluate_seasonal_naive(table, "frozen"))
     else:
         save_result(evaluate_negative_binomial(table))
 

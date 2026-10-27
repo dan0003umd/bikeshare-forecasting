@@ -18,7 +18,7 @@ def known_feature_columns(table: pd.DataFrame) -> list[str]:
     return columns
 
 
-def time_features(table: pd.DataFrame) -> np.ndarray:
+def time_features(table: pd.DataFrame, include_observed_weather: bool = False) -> np.ndarray:
     hour = table.hour.to_numpy(float)
     weekday = table.weekday.to_numpy(float)
     month = table.month.to_numpy(float)
@@ -31,17 +31,29 @@ def time_features(table: pd.DataFrame) -> np.ndarray:
         if column in table:
             values = table[column].to_numpy(float)
             features.append((values - values.mean()) / max(values.std(), 1e-6))
+    if include_observed_weather:
+        # ORACLE ONLY: observations are unavailable at a real 24-hour origin.
+        # Scale using the locked training period to avoid validation distribution
+        # information entering a covariate transform.
+        from .splits import split_mask
+        train = split_mask(table["ts_utc"], "train").to_numpy()
+        for column in ("temperature_2m", "precipitation", "wind_speed_10m"):
+            values = table[column].to_numpy(float)
+            mean, std = values[train].mean(), values[train].std()
+            features.append((values - mean) / max(std, 1e-6))
     return np.column_stack(features).astype("float32")
 
 
-def transformer_config(num_stations: int, num_features: int):
+def transformer_config(num_stations: int, num_features: int, use_station_embedding: bool = True):
     from transformers import TimeSeriesTransformerConfig
     return TimeSeriesTransformerConfig(
         prediction_length=PREDICTION_LENGTH, context_length=168,
         lags_sequence=[1, 2, 3, 24, 168], input_size=1,
         distribution_output="negative_binomial", num_parallel_samples=100,
         num_time_features=num_features, num_dynamic_real_features=0,
-        num_static_categorical_features=1, cardinality=[num_stations], embedding_dimension=[16],
+        num_static_categorical_features=1 if use_station_embedding else 0,
+        cardinality=[num_stations] if use_station_embedding else None,
+        embedding_dimension=[16] if use_station_embedding else None,
         d_model=32, encoder_layers=2, decoder_layers=2,
         encoder_attention_heads=2, decoder_attention_heads=2,
         encoder_ffn_dim=64, decoder_ffn_dim=64, dropout=.1,

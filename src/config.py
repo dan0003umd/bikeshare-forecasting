@@ -7,6 +7,7 @@ PROCESSED_DIR = ROOT / "data" / "processed"
 EXTERNAL_DIR = ROOT / "data" / "external"
 REPORTS_DIR = ROOT / "reports" / "interim_evidence"
 CHECKPOINTS_DIR = ROOT / "checkpoints"
+PREDICTIONS_DIR = ROOT / "data" / "predictions"
 
 # Trip files used: monthly files from this (year, month) up to the latest published month.
 START = (2023, 1)
