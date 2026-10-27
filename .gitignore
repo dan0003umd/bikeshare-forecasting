@@ -3,10 +3,10 @@ __pycache__/
 *.pyc
 .ipynb_checkpoints/
 .vscode/
-data/raw/
-data/processed/
+data/
 *.zip
 *.parquet
 *.pt
 *.pth
 checkpoints/
+logs/

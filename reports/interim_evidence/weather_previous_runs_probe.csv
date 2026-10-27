@@ -1,0 +1,13 @@
+year,variable,nonnull_hours,requested_hours,complete
+2023,temperature_2m,48,48,True
+2023,precipitation,0,48,False
+2023,wind_speed_10m,0,48,False
+2024,temperature_2m,0,48,False
+2024,precipitation,0,48,False
+2024,wind_speed_10m,0,48,False
+2025,temperature_2m,48,48,True
+2025,precipitation,48,48,True
+2025,wind_speed_10m,48,48,True
+2026,temperature_2m,48,48,True
+2026,precipitation,48,48,True
+2026,wind_speed_10m,48,48,True
