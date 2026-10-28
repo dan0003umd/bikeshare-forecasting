@@ -74,7 +74,8 @@ def seasonal_sample_forecasts(table: pd.DataFrame) -> None:
 
 def error_by_hour_from_saved_predictions() -> None:
     """Use persisted per-row predictions for every evaluated model."""
-    paths = sorted(cfg.PREDICTIONS_DIR.glob("*_validation_2025.parquet"))
+    paths = [path for path in sorted(cfg.PREDICTIONS_DIR.glob("*_validation_2025.parquet"))
+             if "_seed43_probe" not in path.name]
     if not paths:
         raise FileNotFoundError("No saved predictions. Run the evaluators before making figures.")
     frames = []
@@ -95,10 +96,12 @@ def error_by_hour_from_saved_predictions() -> None:
 
 
 def loss_curve_if_present() -> None:
-    for stem, title in [
-        ("transformer", "Initial weekly-stride transformer loss"),
-        ("transformer_daily_embed_noweather", "Daily-stride transformer loss (embeddings, no weather)"),
-        ("transformer_daily_embed_observed_weather_oracle", "Daily-stride transformer loss (observed-weather ORACLE)"),
+    for stem, title, ylabel in [
+        ("transformer", "Initial weekly-stride transformer loss", "Negative log likelihood"),
+        ("transformer_daily_embed_noweather", "Daily-stride transformer loss (embeddings, no weather)", "Negative log likelihood"),
+        ("transformer_daily_embed_observed_weather_oracle", "Daily-stride transformer loss (observed-weather ORACLE)", "Negative log likelihood"),
+        ("transformer_xgbfeatures_longcontext_nb", "Longer-context transformer loss (NB head)", "Negative log likelihood"),
+        ("transformer_xgbfeatures_longcontext_quantile", "Longer-context transformer loss (direct quantile head)", "Pinball loss"),
     ]:
         path = cfg.REPORTS_DIR / f"{stem}_loss.csv"
         if not path.exists():
@@ -106,7 +109,7 @@ def loss_curve_if_present() -> None:
         log = pd.read_csv(path)
         _style()
         ax = log.plot(x="epoch", y=["train_loss", "validation_loss"], marker="o", figsize=(7, 4))
-        ax.set(title=title, ylabel="Negative log likelihood")
+        ax.set(title=title, ylabel=ylabel)
         plt.tight_layout()
         plt.savefig(cfg.REPORTS_DIR / f"{stem}_loss.png", dpi=160)
         plt.close()

@@ -26,6 +26,8 @@ FEATURES = {
     "hf_transformer_daily_noembed_noweather": "336 check-out history values, local calendar/holiday/event features; no station embedding or weather",
     "hf_transformer_daily_embed_observed_weather_oracle": "336 check-out history values, local calendar/holiday/event features, station embedding, realized temperature/precipitation/wind (ORACLE)",
     "xgboost_shared_quantile": "Lagged check-outs (1, 2, 3, 24, 168 hours), local calendar/holiday/event features, station code; no observed or forecast weather",
+    "transformer_xgbfeatures_longcontext_nb": "504 past check-out hours (formal lags 1, 2, 3, 24, 168), local calendar/holiday/event features, station embedding/code; no weather; Negative Binomial head",
+    "transformer_xgbfeatures_longcontext_quantile": "504 past check-out hours (formal lags 1, 2, 3, 24, 168), local calendar/holiday/event features, station embedding/code; no weather; direct ordered 19-quantile pinball head",
 }
 
 
@@ -46,7 +48,7 @@ def main() -> None:
                   _table(display, ["model", "features", "pinball_loss", "crps", "coverage_90", "median_mae", "n_observations"]), "",
                   "Pinball loss is averaged over the fixed 19 quantiles (0.05--0.95 by 0.05). CRPS is approximated as twice the trapezoidal integral of pinball loss across that grid, so it is related to, not independent of, pinball loss.",
                   "", "## Quantile construction", "",
-                  "Seasonal-naive quantiles are empirical quantiles of their eight historical demand values. The per-station Negative Binomial uses analytic inverse-CDF quantiles. XGBoost is one multi-quantile `reg:quantileerror` model trained directly for all 19 levels. Transformer quantiles are empirical quantiles of 100 generated Negative Binomial samples. Chronos-2 supplies native quantiles, interpolated to the common 19-level grid when necessary.",
+                  "Seasonal-naive quantiles are empirical quantiles of their eight historical demand values. The per-station Negative Binomial and longer-context NB transformer use analytic inverse-CDF quantiles. XGBoost is one multi-quantile `reg:quantileerror` model trained directly for all 19 levels. The original Hugging Face transformers use empirical quantiles of 100 generated Negative Binomial samples. The longer-context direct-head transformer outputs sorted 19 quantiles and is optimized with pinball loss. Chronos-2 supplies native quantiles, interpolated to the common 19-level grid when necessary.",
                   "", "`observed_weather_oracle` rows use realized future weather, not an operational forecast; they are explicitly non-deployable. Only check-outs have been modeled and scored so far; return-demand results are not available.",
                   "", "No saved scored prediction target falls in the local 2026 test period (the final local-2025 evening has a 2026 UTC timestamp). However, the earlier baseline/transformer runs loaded an assembled table that contains later archives before applying their split masks; their scores did not use local-2026 labels, but a literal claim that those historical jobs never read a 2026 row would be false. The new XGBoost and Chronos scripts use Parquet filters that prevent local-2026 rows from being read."]
     bootstrap_path = cfg.REPORTS_DIR / "paired_bootstrap_validation_2025.csv"
@@ -61,6 +63,17 @@ def main() -> None:
         results_md += ["", "## Paired day-bootstrap comparisons", "",
                        "Each comparison is A minus B for the named metric. The 95% percentile intervals use 10,000 paired bootstrap resamples of the 363 local dates (not individual station-hours). Negative values favour A.", "",
                        _table(bootstrap, ["comparison", "metric", "difference_a_minus_b", "ci95_low", "ci95_high", "days", "interpretation"])]
+    variant_models = results[results.model.str.startswith("transformer_xgbfeatures_", na=False)].copy()
+    if len(variant_models):
+        variant_display = variant_models.assign(
+            pinball_loss=variant_models.pinball_loss.map("{:.4f}".format), crps=variant_models.crps.map("{:.4f}".format),
+            coverage_90=variant_models.coverage_90.map("{:.3f}".format), median_mae=variant_models.median_mae.map("{:.4f}".format),
+        )
+        xgb = results.loc[results.model == "xgboost_shared_quantile"].iloc[0]
+        results_md += ["", "## Targeted longer-context transformer variants", "",
+                       "Both variants use the no-weather XGBoost covariate set and were tuned with 2025 validation early stopping. They are compared against XGBoost on the same 435,600 rows; their paired bootstrap rows appear above.", "",
+                       _table(variant_display, ["model", "pinball_loss", "crps", "coverage_90", "median_mae", "n_observations"]), "",
+                       f"Selected on 2025: `xgboost_shared_quantile` (pinball {xgb.pinball_loss:.4f}); neither targeted transformer beat it. Selecting among several variants on this same tuning period makes the selected validation score slightly optimistic and it is not a 2026 test result."]
     sampling_path = cfg.REPORTS_DIR / "transformer_sampling_audit.csv"
     if sampling_path.exists():
         sampling = pd.read_csv(sampling_path).iloc[0]
@@ -154,6 +167,12 @@ All models are scored on the same 24 future hours for each of 363 eligible local
         summary += (f"- The shared XGBoost quantile baseline, fit only on 2023--2024 data, has pinball loss "
                     f"{xgb.pinball_loss:.4f}, CRPS {xgb.crps:.4f}, and median MAE {xgb.median_mae:.4f}; its fit took "
                     f"{xgb.fit_minutes:.2f} minutes.\n")
+    targeted = results[results.model.str.startswith("transformer_xgbfeatures_", na=False)]
+    if len(targeted):
+        best_targeted = targeted.sort_values("pinball_loss").iloc[0]
+        summary += (f"- The targeted longer-context no-weather transformer variants used the XGBoost covariate set. The best was "
+                    f"`{best_targeted.model}` at {best_targeted.pinball_loss:.4f} pinball loss, so XGBoost ({xgb.pinball_loss:.4f}) "
+                    f"remains selected on 2025; this several-variant choice makes its validation score slightly optimistic and is not a test result.\n")
     if (cfg.REPORTS_DIR / "chronos_subsample_validation_2025.csv").exists():
         chronos_score = pd.read_csv(cfg.REPORTS_DIR / "chronos_subsample_validation_2025.csv").query("model == 'chronos2_zero_shot'").iloc[0]
         summary += (f"- Chronos-2 zero-shot was evaluated only on the fixed 14,400-row 2025 validation subsample; "

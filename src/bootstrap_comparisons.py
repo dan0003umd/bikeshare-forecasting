@@ -14,6 +14,8 @@ COMPARISONS = [
     ("daily_embed_noweather_minus_daily_noembed_noweather", "hf_transformer_daily_embed_noweather", "hf_transformer_daily_noembed_noweather", ["pinball"]),
     ("daily_embed_noweather_minus_observed_weather_oracle", "hf_transformer_daily_embed_noweather", "hf_transformer_daily_embed_observed_weather_oracle", ["pinball"]),
     ("xgboost_minus_daily_embed_noweather", "xgboost_shared_quantile", "hf_transformer_daily_embed_noweather", ["pinball", "median_mae"]),
+    ("xgboost_minus_longcontext_nb_transformer", "xgboost_shared_quantile", "transformer_xgbfeatures_longcontext_nb", ["pinball", "median_mae"]),
+    ("xgboost_minus_longcontext_quantile_transformer", "xgboost_shared_quantile", "transformer_xgbfeatures_longcontext_quantile", ["pinball", "median_mae"]),
 ]
 
 
