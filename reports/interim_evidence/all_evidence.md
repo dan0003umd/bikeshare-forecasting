@@ -16,6 +16,8 @@ All full-window rows below are 2025 validation results on the same 435,600 check
 | hf_transformer_daily_embed_observed_weather_oracle | 336 check-out history values, local calendar/holiday/event features, station embedding, realized temperature/precipitation/wind (ORACLE) | 0.5653 | 1.0536 | 0.949 | 1.5108 | 435600 |
 | hf_transformer_daily_embed_noweather | 336 check-out history values, local calendar/holiday/event features, station embedding; no weather | 0.5755 | 1.0727 | 0.939 | 1.5426 | 435600 |
 | hf_transformer_daily_noembed_noweather | 336 check-out history values, local calendar/holiday/event features; no station embedding or weather | 0.5770 | 1.0753 | 0.949 | 1.5419 | 435600 |
+| transformer_xgbfeatures_longcontext_nb | 504 past check-out hours (formal lags 1, 2, 3, 24, 168), local calendar/holiday/event features, station embedding/code; no weather; Negative Binomial head | 0.5842 | 1.0891 | 0.945 | 1.5672 | 435600 |
+| transformer_xgbfeatures_longcontext_quantile | 504 past check-out hours (formal lags 1, 2, 3, 24, 168), local calendar/holiday/event features, station embedding/code; no weather; direct ordered 19-quantile pinball head | 0.5981 | 1.1149 | 0.912 | 1.6046 | 435600 |
 | hf_transformer_negative_binomial | 336 check-out history values, local calendar/holiday/event features, station embedding; no weather | 0.6345 | 1.1819 | 0.933 | 1.6922 | 435600 |
 | seasonal_naive_rolling_8week | Previous 8 same-station weekday/hour demand values; no weather | 0.6659 | 1.2358 | 0.783 | 1.7306 | 435600 |
 | seasonal_naive_frozen_train_8week | Last 8 pre-2025 same-station weekday/hour demand values; no weather | 0.7492 | 1.3884 | 0.761 | 1.9293 | 435600 |
@@ -25,7 +27,7 @@ Pinball loss is averaged over the fixed 19 quantiles (0.05--0.95 by 0.05). CRPS 
 
 ## Quantile construction
 
-Seasonal-naive quantiles are empirical quantiles of their eight historical demand values. The per-station Negative Binomial uses analytic inverse-CDF quantiles. XGBoost is one multi-quantile `reg:quantileerror` model trained directly for all 19 levels. Transformer quantiles are empirical quantiles of 100 generated Negative Binomial samples. Chronos-2 supplies native quantiles, interpolated to the common 19-level grid when necessary.
+Seasonal-naive quantiles are empirical quantiles of their eight historical demand values. The per-station Negative Binomial and longer-context NB transformer use analytic inverse-CDF quantiles. XGBoost is one multi-quantile `reg:quantileerror` model trained directly for all 19 levels. The original Hugging Face transformers use empirical quantiles of 100 generated Negative Binomial samples. The longer-context direct-head transformer outputs sorted 19 quantiles and is optimized with pinball loss. Chronos-2 supplies native quantiles, interpolated to the common 19-level grid when necessary.
 
 `observed_weather_oracle` rows use realized future weather, not an operational forecast; they are explicitly non-deployable. Only check-outs have been modeled and scored so far; return-demand results are not available.
 
@@ -42,6 +44,21 @@ Each comparison is A minus B for the named metric. The 95% percentile intervals 
 | daily_embed_noweather_minus_observed_weather_oracle | pinball | 0.0102 | 0.0040 | 0.0172 | 363 | distinguishable from zero |
 | xgboost_minus_daily_embed_noweather | pinball | -0.0112 | -0.0166 | -0.0063 | 363 | distinguishable from zero |
 | xgboost_minus_daily_embed_noweather | median_mae | -0.0278 | -0.0422 | -0.0149 | 363 | distinguishable from zero |
+| xgboost_minus_longcontext_nb_transformer | pinball | -0.0198 | -0.0260 | -0.0143 | 363 | distinguishable from zero |
+| xgboost_minus_longcontext_nb_transformer | median_mae | -0.0524 | -0.0685 | -0.0378 | 363 | distinguishable from zero |
+| xgboost_minus_longcontext_quantile_transformer | pinball | -0.0337 | -0.0383 | -0.0294 | 363 | distinguishable from zero |
+| xgboost_minus_longcontext_quantile_transformer | median_mae | -0.0899 | -0.1022 | -0.0783 | 363 | distinguishable from zero |
+
+## Targeted longer-context transformer variants
+
+Both variants use the no-weather XGBoost covariate set and were tuned with 2025 validation early stopping. They are compared against XGBoost on the same 435,600 rows; their paired bootstrap rows appear above.
+
+| model | pinball_loss | crps | coverage_90 | median_mae | n_observations |
+|---|---|---|---|---|---|
+| transformer_xgbfeatures_longcontext_nb | 0.5842 | 1.0891 | 0.945 | 1.5672 | 435600 |
+| transformer_xgbfeatures_longcontext_quantile | 0.5981 | 1.1149 | 0.912 | 1.6046 | 435600 |
+
+Selected on 2025: `xgboost_shared_quantile` (pinball 0.5644); neither targeted transformer beat it. Selecting among several variants on this same tuning period makes the selected validation score slightly optimistic and it is not a 2026 test result.
 
 ## Transformer sampling variation
 
@@ -103,6 +120,7 @@ Chronos-2 zero-shot and every full-window model were scored on the identical det
 - The observed-weather ORACLE reaches 0.5653 pinball loss and 1.5108 median MAE, but it uses realized future weather and is not deployable. Previous Runs forecast-weather coverage is incomplete before 2025.
 - Daily-stride transformer ablations used seed 42 and patience-3 early stopping. XGBoost and Chronos-2 have now been evaluated; the LSTM is intentionally deferred to Dylan.
 - The shared XGBoost quantile baseline, fit only on 2023--2024 data, has pinball loss 0.5644, CRPS 1.0520, and median MAE 1.5148; its fit took 3.19 minutes.
+- The targeted longer-context no-weather transformer variants used the XGBoost covariate set. The best was `transformer_xgbfeatures_longcontext_nb` at 0.5842 pinball loss, so XGBoost (0.5644) remains selected on 2025; this several-variant choice makes its validation score slightly optimistic and is not a test result.
 - Chronos-2 zero-shot was evaluated only on the fixed 14,400-row 2025 validation subsample; its pinball loss was 0.5329.
 - Across the seed-42 and seed-43 transformer sampling runs, the mean absolute difference across quantile values was 0.3061; pinball changed by +0.0000 and median MAE by -0.0007.
 - No saved scored target falls in the local 2026 test period (the final local-2025 evening has a 2026 UTC timestamp). Historical baseline/transformer scripts did load an assembled table containing later archives before masking to 2025, so the project cannot claim that no 2026 row was ever read; the new XGBoost and Chronos loaders use pre-2026 Parquet predicates.
