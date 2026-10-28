@@ -218,6 +218,17 @@ def evaluate(args) -> None:
     print(f"{len(output):,} prediction rows -> {cfg.PREDICTIONS_DIR}")
 
 
+def discard(args) -> None:
+    """Remove an explicitly discarded exploratory result from the tracked table."""
+    path = cfg.REPORTS_DIR / "results_validation_2025.csv"
+    results = pd.read_csv(path)
+    filtered = results.loc[results.model.ne(args.model_name)].copy()
+    if len(filtered) == len(results):
+        raise ValueError(f"result row not found: {args.model_name}")
+    filtered.to_csv(path, index=False)
+    print(f"discarded {args.model_name} from {path}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     sub = parser.add_subparsers(dest="command", required=True)
@@ -235,8 +246,15 @@ def main() -> None:
     eval_parser.add_argument("--model-name", required=True)
     eval_parser.add_argument("--batch-size", type=int, default=32)
     eval_parser.add_argument("--seed", type=int, default=cfg.SEED)
+    discard_parser = sub.add_parser("discard")
+    discard_parser.add_argument("--model-name", required=True)
     args = parser.parse_args()
-    train(args) if args.command == "train" else evaluate(args)
+    if args.command == "train":
+        train(args)
+    elif args.command == "evaluate":
+        evaluate(args)
+    else:
+        discard(args)
 
 
 if __name__ == "__main__":
