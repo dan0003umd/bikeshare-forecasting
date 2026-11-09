@@ -1,0 +1,7 @@
+comparison,metric,difference_a_minus_b,ci95_low,ci95_high,days,bootstrap_draws,ci_includes_zero
+xgboost_shared_quantile_minus_chronos2_zero_shot,pinball,-0.03435929753983497,-0.041232486897770565,-0.028070265904561166,363,10000,False
+xgboost_shared_quantile_minus_chronos2_zero_shot,median_mae,-0.0892248640107149,-0.10787553723040323,-0.07207523710932769,363,10000,False
+hf_transformer_daily_embed_noweather_minus_chronos2_zero_shot,pinball,-0.02319108854278168,-0.028758036062631904,-0.01803997726288491,363,10000,False
+hf_transformer_daily_embed_noweather_minus_chronos2_zero_shot,median_mae,-0.06138352683145824,-0.07648005147624327,-0.04730964660496624,363,10000,False
+chronos2_zero_shot_minus_seasonal_naive_rolling_8week,pinball,-0.0671632762263364,-0.0789386072020255,-0.05596751234911964,363,10000,False
+chronos2_zero_shot_minus_seasonal_naive_rolling_8week,median_mae,-0.1265560966763471,-0.1566475217956498,-0.09792200876902483,363,10000,False

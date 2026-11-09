@@ -83,11 +83,13 @@ def main():
     parser.add_argument("--observed-weather-oracle", action="store_true",
                         help="ORACLE ablation: observed future weather, not deployable forecast weather")
     parser.add_argument("--run-name", default="transformer")
+    parser.add_argument("--seed", type=int, default=cfg.SEED,
+                        help="training seed (weight init and batch order); default reproduces the reported seed-42 runs")
     args = parser.parse_args()
     import torch
     from torch.utils.data import DataLoader
     from transformers import TimeSeriesTransformerForPrediction
-    set_seed()
+    set_seed(args.seed)
     table = load_development_model_table()
     use_embedding = not args.no_station_embedding
     train_set, val_set, n_stations, n_features = prepare_datasets(
@@ -108,7 +110,7 @@ def main():
         print(history[-1])
         payload = {"state_dict": model.state_dict(), "config": model.config.to_dict(), "epoch": epoch,
                    "run_name": args.run_name, "station_embedding": use_embedding,
-                   "observed_weather_oracle": args.observed_weather_oracle}
+                   "observed_weather_oracle": args.observed_weather_oracle, "seed": args.seed}
         torch.save(payload, cfg.CHECKPOINTS_DIR / f"{args.run_name}_last.pt")
         if val_loss < best_loss:
             best_loss, stale_epochs = val_loss, 0
