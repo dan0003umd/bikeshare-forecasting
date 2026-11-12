@@ -11,7 +11,30 @@ from .baselines import save_result
 from .forecast_windows import validation_window_summary
 from .metrics import score
 from .train_transformer import prepare_datasets, set_seed
-from .splits import load_development_model_table
+from .splits import load_development_model_table, split_mask
+
+FORECAST_WEATHER_PATH = cfg.PROCESSED_DIR / "weather_forecast_2025_2026.parquet"
+WEATHER_COLUMNS = ("temperature_2m", "precipitation", "wind_speed_10m")
+
+def swap_in_forecast_weather(table: pd.DataFrame, lead: int) -> pd.DataFrame:
+    """Replace observed weather in validation rows with day ahead forecasts.
+
+    Training rows keep the observed weather, so the training-period scaling inside
+    time_features is unchanged and the ORACLE checkpoint sees inputs on the same
+    scale it was trained on. Past-context hours inside 2025 are also replaced,
+    a conservative simplification (in practice those hours would be observed).
+    """
+
+    forecast = pd.read_parquet(FORECAST_WEATHER_PATH).set_index("ts_utc")
+    table = table.copy()
+    swap = ~split_mask(table["ts_utc"], "train")
+    for column in WEATHER_COLUMNS:
+        values = table.loc[swap, "ts_utc"].map(forecast[f"{column}_fc{lead}d"])
+        if values.isna().any():
+            raise RuntimeError(f"{values.isna().sum()} validation values have no lead-{lead} forecast for {column}")
+        table.loc[swap, column] = values.to_numpy()
+    print(f"swapped in lead-{lead} forecast weather for {int(swap.sum()):,} validation rows")
+    return table
 
 
 def validation_metadata(table: pd.DataFrame, pairs: list[tuple[int, int]]) -> pd.DataFrame:
@@ -29,6 +52,8 @@ def main():
     parser.add_argument("--checkpoint", default="transformer_last.pt", help="checkpoint filename under checkpoints/")
     parser.add_argument("--model-name", default="hf_transformer_negative_binomial")
     parser.add_argument("--seed", type=int, default=cfg.SEED, help="generation seed; use a different value only for sampling audits")
+    parser.add_argument("--forecast-weather", type=int, choices=[1, 2], default=None,
+                        help="replace observed validation weather with the 1- or 2-day-ahead forecast (ORACLE checkpoints only)")
     parser.add_argument("--skip-results-table", action="store_true", help="persist predictions without adding an experiment row")
     args = parser.parse_args()
     import torch
@@ -41,6 +66,10 @@ def main():
     # uses every eligible 2025 day, exactly matching every other model.
     use_embedding = checkpoint.get("station_embedding", True)
     use_weather = checkpoint.get("observed_weather_oracle", False)
+    if args.forecast_weather is not None:
+        if not use_weather:
+            raise SystemExit("--forecast-weather needs a checkpoint trained with weather (the ORACLE checkpoint)")
+        table = swap_in_forecast_weather(table, args.forecast_weather)
     _, validation, _, _ = prepare_datasets(
         table, validation_every_n_days=1, use_station_embedding=use_embedding, include_observed_weather=use_weather)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
