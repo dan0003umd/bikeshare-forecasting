@@ -70,8 +70,14 @@ def main() -> None:
     args = parser.parse_args()
     rows = []
     for label, first_name, second_name, metrics in COMPARISONS:
-        first = pd.read_parquet(cfg.PREDICTIONS_DIR / f"{first_name}_validation_2025.parquet")
-        second = pd.read_parquet(cfg.PREDICTIONS_DIR / f"{second_name}_validation_2025.parquet")
+        paths = [cfg.PREDICTIONS_DIR / f"{name}_validation_2025.parquet" for name in (first_name, second_name)]
+        if not all(path.exists() for path in paths):
+            if cfg.TARGET == "checkouts":
+                raise FileNotFoundError(f"{label}: missing prediction file among {paths}")
+            # Returns reruns cover only the main models, so ablation comparisons are skipped.
+            print(f"skipping {label}: not every model in it was rerun for {cfg.TARGET}")
+            continue
+        first, second = (pd.read_parquet(path) for path in paths)
         for metric in metrics:
             rows.append({"comparison": label, "model_a": first_name, "model_b": second_name,
                          **paired_day_bootstrap(first, second, metric, draws=args.draws)})
@@ -83,3 +89,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+    
