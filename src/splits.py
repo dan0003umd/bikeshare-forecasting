@@ -31,11 +31,21 @@ def assert_no_locked_test_rows(table: pd.DataFrame) -> None:
 
 def load_development_model_table(*, columns: list[str] | None = None) -> pd.DataFrame:
     """Read only pre-test rows and verify the invariant after Parquet pushdown."""
+    retarget = cfg.TARGET != "checkouts"
+    read = columns
+    if retarget and columns is not None and "checkouts" in columns and cfg.TARGET not in columns:
+        read = [*columns, cfg.TARGET]
     table = pd.read_parquet(
-        cfg.MODEL_TABLE_PATH, columns=columns,
+        cfg.MODEL_TABLE_PATH, columns=read,
         filters=[("ts_utc", "<", development_end_utc())],
     )
     assert_no_locked_test_rows(table)
+    if retarget and "checkouts" in table:
+        # Every model reads the modeled count from the "checkouts" column, so pointing that
+        # column at the chosen target reruns the whole pipeline without touching each model.
+        table["checkouts"] = table[cfg.TARGET]
+        if read is not columns:
+            table = table.drop(columns=cfg.TARGET)
     return table
 
 

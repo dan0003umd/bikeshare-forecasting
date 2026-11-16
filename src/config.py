@@ -1,4 +1,5 @@
 """Project-wide settings. Change values here, not inside the scripts."""
+import os
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -11,6 +12,16 @@ PREDICTIONS_DIR = ROOT / "data" / "predictions"
 MODEL_TABLE_PATH = PROCESSED_DIR / "model_table.parquet"
 LOCKED_TEST_DIR = PROCESSED_DIR / "locked_test_2026"
 LOCKED_TEST_MODEL_TABLE_PATH = LOCKED_TEST_DIR / "model_table.parquet"
+# Which hourly count the models forecast. "checkouts" is the main study; "returns" reruns
+# the identical pipeline on bikes docked. Choose per run with BIKESHARE_TARGET=returns.
+# Non-checkout runs write to their own folders, so checkout results are never overwritten.
+TARGET = os.environ.get("BIKESHARE_TARGET", "checkouts")
+if TARGET not in ("checkouts", "returns"):
+    raise ValueError(f"BIKESHARE_TARGET must be checkouts or returns, got {TARGET!r}")
+if TARGET != "checkouts":
+    REPORTS_DIR = ROOT / "reports" / f"{TARGET}_evidence"
+    CHECKPOINTS_DIR = CHECKPOINTS_DIR / TARGET
+    PREDICTIONS_DIR = PREDICTIONS_DIR / TARGET
 
 # Trip files used: monthly files from this (year, month) up to the latest published month.
 START = (2023, 1)
