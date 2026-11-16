@@ -51,14 +51,15 @@ def main():
                         help="smoke test only: stop each epoch after this many batches")
     parser.add_argument("--run-name", default="lstm_quantile")
     parser.add_argument("--seed", type=int, default=cfg.SEED)
+    parser.add_argument("--validation-every-n-days", type=int, default=1)
     args = parser.parse_args()
 
     set_seed(args.seed)
     table = load_development_model_table()
-    # Same windows as the daily transformers: train on every 2023-2024 day,
-    # monitor on weekly 2025 windows (the full daily 2025 scoring happens in evaluate_lstm).
+    # Same windows as the daily transformers: train on every 2023-2024 day and
+    # monitor early stopping on every 2025 day (--validation-every-n-days 1).
     train_set, val_set, n_stations, n_features = prepare_datasets(
-        table, train_every_n_days=1, validation_every_n_days=7)
+        table, train_every_n_days=1, validation_every_n_days=args.validation_every_n_days)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     hyperparameters = {"n_stations": n_stations, "n_features": n_features,
                        "hidden_size": args.hidden_size, "num_layers": args.num_layers}
