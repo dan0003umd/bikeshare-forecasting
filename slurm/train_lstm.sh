@@ -13,7 +13,7 @@
 set -e  # stop if training fails, so we never evaluate a missing or stale checkpoint
 
 module load python/3.10.10
-unset PYTHONPATHt
+unset PYTHONPATH
 source /scratch/zt1/project/msml612/user/dboone12/venvs/bikeshare/bin/activate
 cd /scratch/zt1/project/msml612/user/dboone12/bikeshare-forecasting
 
