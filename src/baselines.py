@@ -60,7 +60,8 @@ def seasonal_naive_frozen_quantiles(table: pd.DataFrame, history_weeks: int = 8)
     return data.sort_index()[[f"q{int(q * 100):02d}" for q in grid]].to_numpy()
 
 
-def save_predictions(table: pd.DataFrame, valid: pd.Series, pred: np.ndarray, model: str) -> None:
+def save_predictions(table: pd.DataFrame, valid: pd.Series, pred: np.ndarray, model: str,
+                     tag: str = "validation_2025") -> None:
     """Persist all 19 quantiles and truth locally; data/ is intentionally ignored."""
     columns = [f"q{int(q * 100):02d}" for q in cfg.QUANTILES]
     out = table.loc[valid, ["station_id", "ts_utc", "checkouts"]].rename(columns={"checkouts": "actual"}).copy()
@@ -72,7 +73,7 @@ def save_predictions(table: pd.DataFrame, valid: pd.Series, pred: np.ndarray, mo
         raise ValueError(f"prediction rows ({len(pred)}) do not match table ({len(table)}) or valid rows ({len(out)})")
     out[columns] = prediction_rows
     cfg.PREDICTIONS_DIR.mkdir(parents=True, exist_ok=True)
-    out.to_parquet(cfg.PREDICTIONS_DIR / f"{model}_validation_2025.parquet", index=False)
+    out.to_parquet(cfg.PREDICTIONS_DIR / f"{model}_{tag}.parquet", index=False)
     print(f"{len(out):,} prediction rows -> {cfg.PREDICTIONS_DIR}")
 
 
@@ -130,9 +131,15 @@ def evaluate_negative_binomial(table: pd.DataFrame) -> dict:
     return result
 
 
-def save_result(result: dict) -> pd.DataFrame:
+def save_result(result: dict, tag: str = "validation_2025", per_job: bool = False) -> pd.DataFrame:
     cfg.REPORTS_DIR.mkdir(parents=True, exist_ok=True)
-    path = cfg.REPORTS_DIR / "results_validation_2025.csv"
+    if per_job:
+        # One file per model, so jobs that finish together cannot overwrite each other.
+        out = pd.DataFrame([result])
+        out.to_csv(cfg.REPORTS_DIR / f"results_{tag}_{result['model']}.csv", index=False)
+        print(out.to_string(index=False))
+        return out
+    path = cfg.REPORTS_DIR / f"results_{tag}.csv"
     old = pd.read_csv(path) if path.exists() else pd.DataFrame()
     old = old[old.get("model", pd.Series(dtype=str)) != result["model"]] if len(old) else old
     if result["model"] == "seasonal_naive_frozen_train_8week" and len(old):
