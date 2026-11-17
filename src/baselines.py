@@ -11,7 +11,7 @@ import statsmodels.api as sm
 from . import config as cfg
 from .forecast_windows import validation_window_mask, validation_window_summary
 from .metrics import score
-from .splits import load_development_model_table, split_mask
+from .splits import add_final_argument, load_development_model_table, load_table_through_test, split_mask
 
 
 def _seasonal_data(table: pd.DataFrame):
@@ -77,18 +77,19 @@ def save_predictions(table: pd.DataFrame, valid: pd.Series, pred: np.ndarray, mo
     print(f"{len(out):,} prediction rows -> {cfg.PREDICTIONS_DIR}")
 
 
-def evaluate_seasonal_naive(table: pd.DataFrame, variant: str) -> dict:
+def evaluate_seasonal_naive(table: pd.DataFrame, variant: str, split: str = "validation",
+                            final: bool = False, tag: str = "validation_2025") -> dict:
     if variant == "rolling":
         model, pred = "seasonal_naive_rolling_8week", seasonal_naive_rolling_quantiles(table)
     elif variant == "frozen":
         model, pred = "seasonal_naive_frozen_train_8week", seasonal_naive_frozen_quantiles(table)
     else:
         raise ValueError("variant must be rolling or frozen")
-    mask = validation_window_mask(table)
+    mask = validation_window_mask(table, split, final)
     valid = mask & np.isfinite(pred).all(axis=1)
-    save_predictions(table, valid, pred, model)
+    save_predictions(table, valid, pred, model, tag)
     result = {"model": model, **score(table.loc[valid, "checkouts"], pred[valid])}
-    result.update(validation_window_summary(table))
+    result.update(validation_window_summary(table, split, final))
     result["excluded_warmup_rows"] = int(mask.sum() - valid.sum())
     return result
 
@@ -153,14 +154,22 @@ def save_result(result: dict, tag: str = "validation_2025", per_job: bool = Fals
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", choices=["seasonal_rolling", "seasonal_frozen", "negative_binomial"], default="seasonal_rolling")
+    add_final_argument(parser)
     args = parser.parse_args()
-    table = load_development_model_table()
+    if args.final and args.model == "negative_binomial":
+        raise SystemExit("negative_binomial is validation-only; it is not in the frozen test list")
+    table = load_table_through_test(final=True) if args.final else load_development_model_table()
+    options = {"split": "test", "final": True, "tag": "test_2026"} if args.final else {}
     if args.model == "seasonal_rolling":
-        save_result(evaluate_seasonal_naive(table, "rolling"))
+        result = evaluate_seasonal_naive(table, "rolling", **options)
     elif args.model == "seasonal_frozen":
-        save_result(evaluate_seasonal_naive(table, "frozen"))
+        result = evaluate_seasonal_naive(table, "frozen", **options)
     else:
-        save_result(evaluate_negative_binomial(table))
+        result = evaluate_negative_binomial(table)
+    if args.final:
+        save_result(result, tag="test_2026", per_job=True)
+    else:
+        save_result(result)
 
 
 if __name__ == "__main__":
