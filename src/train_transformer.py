@@ -39,7 +39,8 @@ class WindowDataset:
 
 
 def prepare_datasets(table: pd.DataFrame, train_every_n_days: int = 7, validation_every_n_days: int = 7,
-                     use_station_embedding: bool = True, include_observed_weather: bool = False):
+                     use_station_embedding: bool = True, include_observed_weather: bool = False,
+                     eval_split: str = "validation", final: bool = False):
     stations = sorted(table.station_id.unique())
     station_frames = [table[table.station_id.eq(station)].sort_values("ts_utc").reset_index(drop=True) for station in stations]
     # All selected stations share a time axis by construction.
@@ -49,11 +50,10 @@ def prepare_datasets(table: pd.DataFrame, train_every_n_days: int = 7, validatio
     for station, frame in enumerate(station_frames):
         train_pairs.extend((station, int(start)) for start in daily_starts(frame, "train", every_n_days=train_every_n_days)
                            if start + PREDICTION_LENGTH <= len(frame))
-        val_pairs.extend((station, int(start)) for start in daily_starts(frame, "validation", every_n_days=validation_every_n_days)
+        val_pairs.extend((station, int(start)) for start in daily_starts(frame, eval_split, every_n_days=validation_every_n_days, final=final)
                          if start + PREDICTION_LENGTH <= len(frame))
     return (WindowDataset(values, features, train_pairs, use_station_embedding),
             WindowDataset(values, features, val_pairs, use_station_embedding), len(stations), features.shape[1])
-
 
 def run_epoch(model, loader, optimizer, device):
     import torch
