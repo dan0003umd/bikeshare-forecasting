@@ -20,6 +20,7 @@ COMPARISONS = [
     ("forecast_weather_lead1_minus_observed_weather_oracle", "hf_transformer_daily_embed_forecast_weather_lead1", "hf_transformer_daily_embed_observed_weather_oracle", ["pinball"]),
     ("lstm_minus_daily_embed_noweather", "lstm_quantile", "hf_transformer_daily_embed_noweather", ["pinball", "median_mae"]),
     ("lstm_minus_xgboost", "lstm_quantile", "xgboost_shared_quantile", ["pinball", "median_mae"]),
+    ("forecast_weather_lead1_minus_xgboost", "hf_transformer_daily_embed_forecast_weather_lead1", "xgboost_shared_quantile", ["pinball", "median_mae"]),
 ]
 
 
@@ -89,4 +90,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-    
