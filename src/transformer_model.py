@@ -60,11 +60,11 @@ def transformer_config(num_stations: int, num_features: int, use_station_embeddi
     )
 
 
-def daily_starts(table: pd.DataFrame, split: str, every_n_days: int = 1) -> np.ndarray:
+def daily_starts(table: pd.DataFrame, split: str, every_n_days: int = 1, final: bool = False) -> np.ndarray:
     """UTC positions starting local midnight, requiring a complete non-DST 24h target."""
     from .splits import split_mask
     local_date = table.ts_utc.dt.tz_convert(cfg.LOCAL_TZ).dt.date
-    eligible = split_mask(table.ts_utc, split)
+    eligible = split_mask(table.ts_utc, split, final=final)
     counts = table[eligible].assign(local_date=local_date[eligible]).groupby("local_date").size()
     # Input is a single station frame here, so complete target days have 24 rows.
     dates = counts.index[counts.eq(24)][::every_n_days]

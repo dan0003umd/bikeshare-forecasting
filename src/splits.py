@@ -71,3 +71,14 @@ def split_mask(ts_utc: pd.Series, split: str, *, final: bool = False) -> pd.Seri
 
 def add_final_argument(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--final", action="store_true", help="unlock the held-out 2026 test split")
+
+
+def load_table_through_test(*, final: bool) -> pd.DataFrame:
+    """Development plus locked 2026 rows; the test needs the earlier history as context."""
+    if not final:
+        raise PermissionError("The 2026 test split is locked. Re-run explicitly with --final.")
+    table = pd.concat([pd.read_parquet(cfg.MODEL_TABLE_PATH),
+                       pd.read_parquet(cfg.LOCKED_TEST_MODEL_TABLE_PATH)], ignore_index=True)
+    if cfg.TARGET != "checkouts":
+        table["checkouts"] = table[cfg.TARGET]
+    return table.sort_values(["station_id", "ts_utc"]).reset_index(drop=True)
