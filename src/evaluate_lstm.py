@@ -13,7 +13,7 @@ from .evaluate_transformer import validation_metadata
 from .forecast_windows import validation_window_summary
 from .lstm_model import QuantileLSTM
 from .metrics import score
-from .splits import load_development_model_table
+from .splits import add_final_argument, load_development_model_table, load_table_through_test
 from .train_lstm import MODEL_INPUTS
 from .train_transformer import prepare_datasets
 
@@ -25,12 +25,15 @@ def main():
     parser.add_argument("--batch-size", type=int, default=512)
     parser.add_argument("--skip-results-table", action="store_true",
                         help="persist predictions without adding an experiment row")
+    add_final_argument(parser)
     args = parser.parse_args()
+    split = "test" if args.final else "validation"
+    tag = "test_2026" if args.final else "validation_2025"
 
     checkpoint = torch.load(cfg.CHECKPOINTS_DIR / args.checkpoint, map_location="cpu", weights_only=False)
-    table = load_development_model_table()
+    table = load_table_through_test(final=True) if args.final else load_development_model_table()
     # Every eligible 2025 day, exactly like evaluate_transformer.
-    _, validation, _, _ = prepare_datasets(table, validation_every_n_days=1)
+    _, validation, _, _ = prepare_datasets(table, validation_every_n_days=1, eval_split=split, final=args.final)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = QuantileLSTM(**checkpoint["hyperparameters"])
     model.load_state_dict(checkpoint["state_dict"])
@@ -47,18 +50,21 @@ def main():
             all_y.append(batch["future_values"].cpu().numpy().reshape(-1))
 
     result = {"model": args.model_name, **score(np.concatenate(all_y), np.concatenate(all_q))}
-    result.update(validation_window_summary(table))
+    result.update(validation_window_summary(table, split, args.final))
     result["excluded_warmup_rows"] = 0
     prediction = validation_metadata(table, validation.pairs)
     if len(prediction) != result["n_observations"]:
         raise RuntimeError(f"prediction metadata has {len(prediction)} rows, expected {result['n_observations']}")
     prediction[[f"q{int(q * 100):02d}" for q in cfg.QUANTILES]] = np.concatenate(all_q)
     cfg.PREDICTIONS_DIR.mkdir(parents=True, exist_ok=True)
-    path = cfg.PREDICTIONS_DIR / f"{args.model_name}_validation_2025.parquet"
+    path = cfg.PREDICTIONS_DIR / f"{args.model_name}_{tag}.parquet"
     prediction.to_parquet(path, index=False)
     print(f"{len(prediction):,} prediction rows -> {path}")
     if not args.skip_results_table:
-        save_result(result)
+        if args.final:
+            save_result(result, tag=tag, per_job=True)
+        else:
+            save_result(result)
 
 
 if __name__ == "__main__":

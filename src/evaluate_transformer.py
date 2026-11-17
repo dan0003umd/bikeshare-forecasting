@@ -11,7 +11,7 @@ from .baselines import save_result
 from .forecast_windows import validation_window_summary
 from .metrics import score
 from .train_transformer import prepare_datasets, set_seed
-from .splits import load_development_model_table, split_mask
+from .splits import add_final_argument, load_development_model_table, load_table_through_test, split_mask
 
 FORECAST_WEATHER_PATH = cfg.PROCESSED_DIR / "weather_forecast_2025_2026.parquet"
 WEATHER_COLUMNS = ("temperature_2m", "precipitation", "wind_speed_10m")
@@ -55,13 +55,16 @@ def main():
     parser.add_argument("--forecast-weather", type=int, choices=[1, 2], default=None,
                         help="replace observed validation weather with the 1- or 2-day-ahead forecast (ORACLE checkpoints only)")
     parser.add_argument("--skip-results-table", action="store_true", help="persist predictions without adding an experiment row")
+    add_final_argument(parser)
     args = parser.parse_args()
+    split = "test" if args.final else "validation"
+    tag = "test_2026" if args.final else "validation_2025"
     import torch
     from torch.utils.data import DataLoader
     from transformers import TimeSeriesTransformerConfig, TimeSeriesTransformerForPrediction
     set_seed(args.seed)
     checkpoint = torch.load(cfg.CHECKPOINTS_DIR / args.checkpoint, map_location="cpu", weights_only=False)
-    table = load_development_model_table()
+    table = load_table_through_test(final=True) if args.final else load_development_model_table()
     # Training used weekly validation windows to fit in the first run; reporting
     # uses every eligible 2025 day, exactly matching every other model.
     use_embedding = checkpoint.get("station_embedding", True)
@@ -71,7 +74,8 @@ def main():
             raise SystemExit("--forecast-weather needs a checkpoint trained with weather (the ORACLE checkpoint)")
         table = swap_in_forecast_weather(table, args.forecast_weather)
     _, validation, _, _ = prepare_datasets(
-        table, validation_every_n_days=1, use_station_embedding=use_embedding, include_observed_weather=use_weather)
+        table, validation_every_n_days=1, use_station_embedding=use_embedding, include_observed_weather=use_weather,
+        eval_split=split, final=args.final)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = TimeSeriesTransformerForPrediction(TimeSeriesTransformerConfig.from_dict(checkpoint["config"]))
     model.load_state_dict(checkpoint["state_dict"]); model.to(device).eval()
@@ -90,17 +94,20 @@ def main():
             all_q.append(np.quantile(samples, cfg.QUANTILES, axis=1).transpose(1, 2, 0).reshape(-1, len(cfg.QUANTILES)))
             all_y.append(batch["future_values"].detach().cpu().numpy().reshape(-1))
     result = {"model": args.model_name, **score(np.concatenate(all_y), np.concatenate(all_q))}
-    result.update(validation_window_summary(table)); result["excluded_warmup_rows"] = 0
+    result.update(validation_window_summary(table, split, args.final)); result["excluded_warmup_rows"] = 0
     prediction = validation_metadata(table, validation.pairs)
     if len(prediction) != result["n_observations"]:
         raise RuntimeError(f"prediction metadata has {len(prediction)} rows, expected {result['n_observations']}")
     prediction[[f"q{int(q * 100):02d}" for q in cfg.QUANTILES]] = np.concatenate(all_q)
     cfg.PREDICTIONS_DIR.mkdir(parents=True, exist_ok=True)
-    path = cfg.PREDICTIONS_DIR / f"{args.model_name}_validation_2025.parquet"
+    path = cfg.PREDICTIONS_DIR / f"{args.model_name}_{tag}.parquet"
     prediction.to_parquet(path, index=False)
     print(f"{len(prediction):,} prediction rows -> {path}")
     if not args.skip_results_table:
-        save_result(result)
+        if args.final:
+            save_result(result, tag=tag, per_job=True)
+        else:
+            save_result(result)
 
 
 if __name__ == "__main__":
