@@ -12,7 +12,7 @@ from . import config as cfg
 from .baselines import save_predictions, save_result
 from .forecast_windows import validation_window_mask, validation_window_summary
 from .metrics import score
-from .splits import load_development_model_table, split_mask
+from .splits import add_final_argument, load_development_model_table, load_table_through_test, split_mask
 
 
 LAGS = (1, 2, 3, 24, 168)
@@ -56,15 +56,21 @@ def main() -> None:
     parser.add_argument("--n-estimators", type=int, default=400)
     parser.add_argument("--max-minutes", type=float, default=60)
     parser.add_argument("--device", default="cuda", choices=["cuda", "cpu"])
+    add_final_argument(parser)
     args = parser.parse_args()
     import xgboost as xgb
 
+    split = "test" if args.final else "validation"
+    tag = "test_2026" if args.final else "validation_2025"
     started = time.monotonic()
-    table, columns = xgboost_features(load_pretest_table())
+    loaded = load_table_through_test(final=True) if args.final else load_pretest_table()
+    table, columns = xgboost_features(loaded.sort_values(["station_id", "ts_utc"]).reset_index(drop=True))
     train = split_mask(table.ts_utc, "train") & table[columns].notna().all(axis=1)
-    validation = validation_window_mask(table) & table[columns].notna().all(axis=1)
-    if validation.sum() != 435_600:
-        raise RuntimeError(f"expected 435,600 validation observations, found {validation.sum():,}")
+    eval_mask = validation_window_mask(table, split, args.final)
+    validation = eval_mask & table[columns].notna().all(axis=1)
+    expected = int(eval_mask.sum()) if args.final else 435_600
+    if validation.sum() != expected:
+        raise RuntimeError(f"expected {expected:,} {split} observations, found {validation.sum():,}")
     deadline = DeadlineStop(started, args.max_minutes)
     model = xgb.XGBRegressor(
         objective="reg:quantileerror", quantile_alpha=list(cfg.QUANTILES), n_estimators=args.n_estimators,
@@ -72,16 +78,21 @@ def main() -> None:
         tree_method="hist", device=args.device, n_jobs=1, random_state=cfg.SEED, callbacks=[deadline],
     )
     model.fit(table.loc[train, columns].astype("float32"), table.loc[train, "checkouts"], verbose=False)
+    if args.final and deadline.stopped:
+        raise RuntimeError("time budget reached: the refit differs from the validation fit; raise --max-minutes")
     prediction = model.predict(table.loc[validation, columns].astype("float32"))
     if prediction.shape != (int(validation.sum()), len(cfg.QUANTILES)):
         raise RuntimeError(f"unexpected XGBoost prediction shape {prediction.shape}")
     result = {"model": "xgboost_shared_quantile", **score(table.loc[validation, "checkouts"], prediction)}
-    result.update(validation_window_summary(table))
-    result["excluded_warmup_rows"] = int(validation_window_mask(table).sum() - validation.sum())
+    result.update(validation_window_summary(table, split, args.final))
+    result["excluded_warmup_rows"] = int(eval_mask.sum() - validation.sum())
     result["fit_minutes"] = (time.monotonic() - started) / 60
     result["time_budget_reached"] = deadline.stopped
-    save_predictions(table, validation, prediction, result["model"])
-    save_result(result)
+    save_predictions(table, validation, prediction, result["model"], tag)
+    if args.final:
+        save_result(result, tag=tag, per_job=True)
+    else:
+        save_result(result)
     print(f"fit_minutes={result['fit_minutes']:.2f}; time_budget_reached={deadline.stopped}")
 
 
