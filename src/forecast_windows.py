@@ -1,4 +1,3 @@
-$text = @'
 """Shared fixed-length validation windows: local-midnight days with 24 real hours."""
 from __future__ import annotations
 
@@ -30,6 +29,3 @@ def validation_window_summary(table: pd.DataFrame, split: str = "validation", fi
     n_stations = table.loc[mask, "station_id"].nunique()
     return {"validation_days": int(mask.sum() // (24 * n_stations)), "stations": int(n_stations),
             "rows": int(mask.sum()), "dst_or_non24_rows_excluded": int((~mask).sum())}
-'@
-[System.IO.File]::WriteAllText("$PWD\src\forecast_windows.py", $text)
-git --no-pager diff --stat
