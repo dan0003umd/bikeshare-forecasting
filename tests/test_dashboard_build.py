@@ -8,6 +8,8 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+from dashboard.build_dashboard import MODEL_FILES, read_scores, find_files
+
 
 ROOT = Path(__file__).resolve().parents[1]
 MODELS = [
@@ -64,6 +66,17 @@ def test_default_build_has_no_test_scores(built_dashboard):
 def test_dashboard_source_does_not_name_locked_test_directory():
     source = (ROOT / "dashboard" / "build_dashboard.py").read_text(encoding="utf-8")
     assert "locked_test_2026" not in source
+
+
+def test_short_lag_xgboost_ablation_never_fills_normal_xgboost_slot(tmp_path):
+    short = tmp_path / "xgboost_short_lag_not_deployable_validation_2025.parquet"
+    short.touch()
+    assert find_files(tmp_path, MODEL_FILES["xgboost_shared_quantile"]) is None
+    scores = pd.DataFrame([
+        {"model": "xgboost_short_lag_not_deployable", "pinball_loss": 1.0, "crps": 1.0,
+         "coverage_90": 0.9, "median_mae": 1.0, "n_observations": 435600},
+    ])
+    assert "xgboost_shared_quantile" not in read_scores(scores)
 
 
 def test_embedded_scores_match_saved_csvs(built_dashboard):

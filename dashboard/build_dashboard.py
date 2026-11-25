@@ -34,6 +34,7 @@ MODEL_ORDER = [
     "hf_transformer_daily_embed_forecast_weather_lead1",
     "hf_transformer_daily_embed_observed_weather_oracle",
 ]
+NON_DEPLOYABLE_ABLATIONS = {"xgboost_short_lag_not_deployable"}
 
 # Edit these patterns if file names differ on the machine you run on.
 # Checkouts are searched in --predictions-dir, returns in --returns-predictions-dir.
@@ -79,6 +80,8 @@ TARGET_REPORT_DIR = {"checkouts": "interim_evidence", "returns": "returns_eviden
 
 def match_model(name, key, candidates):
     """Return True if csv model name 'name' belongs to model 'key'."""
+    if name in NON_DEPLOYABLE_ABLATIONS:
+        return False
     if name in SCORE_ALIASES[key]:
         return True
     toks, excl = SCORE_TOKENS[key]
