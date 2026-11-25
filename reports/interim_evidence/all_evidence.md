@@ -10,9 +10,11 @@ The seed-43 audit did **not** retrain the transformer. It loaded the existing da
 
 All full-window rows below are 2025 validation results on the same 435,600 check-out station-hours: 50 stations x 363 local days x 24 hours. This validation period was also used for transformer early stopping and tuning; these are not 2026 test results.
 
+> **XGBoost status:** the existing `xgboost_shared_quantile` row below is the historical short-lag result. It is a non-deployable ablation pending the origin-safe 24/48/168 local-day-aligned refit; do not interpret it as a current model selection.
+
 | model | features | pinball_loss | crps | coverage_90 | median_mae | n_observations |
 |---|---|---|---|---|---|---|
-| xgboost_shared_quantile | Lagged check-outs (1, 2, 3, 24, 168 hours), local calendar/holiday/event features, station code; no observed or forecast weather | 0.5644 | 1.0520 | 0.900 | 1.5148 | 435600 |
+| xgboost_shared_quantile | Historical short lags (1, 2, 3, 24, 168 rows); non-deployable lookahead ablation | 0.5644 | 1.0520 | 0.900 | 1.5148 | 435600 |
 | hf_transformer_daily_embed_observed_weather_oracle | 336 check-out history values, local calendar/holiday/event features, station embedding, realized temperature/precipitation/wind (ORACLE) | 0.5653 | 1.0536 | 0.949 | 1.5108 | 435600 |
 | hf_transformer_daily_embed_noweather | 336 check-out history values, local calendar/holiday/event features, station embedding; no weather | 0.5755 | 1.0727 | 0.939 | 1.5426 | 435600 |
 | hf_transformer_daily_noembed_noweather | 336 check-out history values, local calendar/holiday/event features; no station embedding or weather | 0.5770 | 1.0753 | 0.949 | 1.5419 | 435600 |
@@ -58,7 +60,7 @@ Both variants use the no-weather XGBoost covariate set and were tuned with 2025 
 | transformer_xgbfeatures_longcontext_nb | 0.5842 | 1.0891 | 0.945 | 1.5672 | 435600 |
 | transformer_xgbfeatures_longcontext_quantile | 0.5981 | 1.1149 | 0.912 | 1.6046 | 435600 |
 
-Selected on 2025: `xgboost_shared_quantile` (pinball 0.5644); neither targeted transformer beat it. Selecting among several variants on this same tuning period makes the selected validation score slightly optimistic and it is not a 2026 test result.
+The prior `xgboost_shared_quantile` score (pinball 0.5644) used short target-day lags and is retained only as a non-deployable ablation. Origin-safe XGBoost validation metrics are pending refit; no model should be selected over it until that run is complete.
 
 ## Transformer sampling variation
 
@@ -119,8 +121,8 @@ Chronos-2 zero-shot and every full-window model were scored on the identical det
 - The restored causal rolling seasonal naive has pinball loss 0.6659 and median MAE 1.7306. The daily-stride transformer with station embeddings and no weather improves these to 0.5755 and 1.5426.
 - The observed-weather ORACLE reaches 0.5653 pinball loss and 1.5108 median MAE, but it uses realized future weather and is not deployable. Previous Runs forecast-weather coverage is incomplete before 2025.
 - Daily-stride transformer ablations used seed 42 and patience-3 early stopping. XGBoost and Chronos-2 have now been evaluated; the LSTM is intentionally deferred to Dylan.
-- The shared XGBoost quantile baseline, fit only on 2023--2024 data, has pinball loss 0.5644, CRPS 1.0520, and median MAE 1.5148; its fit took 3.19 minutes.
-- The targeted longer-context no-weather transformer variants used the XGBoost covariate set. The best was `transformer_xgbfeatures_longcontext_nb` at 0.5842 pinball loss, so XGBoost (0.5644) remains selected on 2025; this several-variant choice makes its validation score slightly optimistic and is not a test result.
+- The prior shared XGBoost row used short target-day lags and is now a non-deployable ablation. Origin-safe XGBoost validation metrics are pending refit.
+- The targeted longer-context no-weather transformer variants used the XGBoost covariate set. The best was `transformer_xgbfeatures_longcontext_nb` at 0.5842 pinball loss; no model is selected over origin-safe XGBoost until its validation refit is complete.
 - Chronos-2 zero-shot was evaluated only on the fixed 14,400-row 2025 validation subsample; its pinball loss was 0.5329.
 - Across the seed-42 and seed-43 transformer sampling runs, the mean absolute difference across quantile values was 0.3061; pinball changed by +0.0000 and median MAE by -0.0007.
 - No saved scored target falls in the local 2026 test period (the final local-2025 evening has a 2026 UTC timestamp). Historical baseline/transformer scripts did load an assembled table containing later archives before masking to 2025, so the project cannot claim that no 2026 row was ever read; the new XGBoost and Chronos loaders use pre-2026 Parquet predicates.
@@ -231,7 +233,7 @@ The initial transformer checkpoint and loss log came from a five-epoch weekly-st
 
 ## Current evidence
 
-All full-window metrics are **2025 validation**, not test metrics: the same 2025 period was used for transformer early stopping and tuning. The held-out 2026 test remains locked. The strongest deployable full-window model is the shared XGBoost quantile baseline (pinball 0.5644, CRPS 1.0520, 90% coverage 0.900, median MAE 1.5148). The observed-weather transformer Oracle is non-deployable because it uses realized future weather.
+All full-window metrics are **2025 validation**, not test metrics: the same 2025 period was used for transformer early stopping and tuning. The held-out 2026 test remains locked. The prior shared-XGBoost row used short target-day lags and is now a non-deployable ablation; origin-safe XGBoost validation metrics are pending refit. The observed-weather transformer Oracle is non-deployable because it uses realized future weather.
 
 | Model | Pinball | Median MAE | Scope |
 |---|---:|---:|---|

@@ -2,9 +2,11 @@
 
 All full-window rows below are 2025 validation results on the same 435,600 check-out station-hours: 50 stations x 363 local days x 24 hours. This validation period was also used for transformer early stopping and tuning; these are not 2026 test results.
 
+> **XGBoost status:** the existing `xgboost_shared_quantile` row below is the historical short-lag result. It is a non-deployable ablation pending the origin-safe 24/48/168 local-day-aligned refit; do not interpret it as a current model selection.
+
 | model | features | pinball_loss | crps | coverage_90 | median_mae | n_observations |
 |---|---|---|---|---|---|---|
-| xgboost_shared_quantile | Lagged check-outs (1, 2, 3, 24, 168 hours), local calendar/holiday/event features, station code; no observed or forecast weather | 0.5644 | 1.0520 | 0.900 | 1.5148 | 435600 |
+| xgboost_shared_quantile | Historical short lags (1, 2, 3, 24, 168 rows); non-deployable lookahead ablation | 0.5644 | 1.0520 | 0.900 | 1.5148 | 435600 |
 | hf_transformer_daily_embed_observed_weather_oracle | 336 check-out history values, local calendar/holiday/event features, station embedding, realized temperature/precipitation/wind (ORACLE) | 0.5653 | 1.0536 | 0.949 | 1.5108 | 435600 |
 | hf_transformer_daily_embed_noweather | 336 check-out history values, local calendar/holiday/event features, station embedding; no weather | 0.5755 | 1.0727 | 0.939 | 1.5426 | 435600 |
 | hf_transformer_daily_noembed_noweather | 336 check-out history values, local calendar/holiday/event features; no station embedding or weather | 0.5770 | 1.0753 | 0.949 | 1.5419 | 435600 |
@@ -50,7 +52,7 @@ Both variants use the no-weather XGBoost covariate set and were tuned with 2025 
 | transformer_xgbfeatures_longcontext_nb | 0.5842 | 1.0891 | 0.945 | 1.5672 | 435600 |
 | transformer_xgbfeatures_longcontext_quantile | 0.5981 | 1.1149 | 0.912 | 1.6046 | 435600 |
 
-Selected on 2025: `xgboost_shared_quantile` (pinball 0.5644); neither targeted transformer beat it. Selecting among several variants on this same tuning period makes the selected validation score slightly optimistic and it is not a 2026 test result.
+The prior `xgboost_shared_quantile` score (pinball 0.5644) used short target-day lags and is retained only as a non-deployable ablation. Origin-safe XGBoost validation metrics are pending refit; no model should be selected over it until that run is complete.
 
 ## Transformer sampling variation
 

@@ -25,7 +25,8 @@ FEATURES = {
     "hf_transformer_daily_embed_noweather": "336 check-out history values, local calendar/holiday/event features, station embedding; no weather",
     "hf_transformer_daily_noembed_noweather": "336 check-out history values, local calendar/holiday/event features; no station embedding or weather",
     "hf_transformer_daily_embed_observed_weather_oracle": "336 check-out history values, local calendar/holiday/event features, station embedding, realized temperature/precipitation/wind (ORACLE)",
-    "xgboost_shared_quantile": "Lagged check-outs (1, 2, 3, 24, 168 hours), local calendar/holiday/event features, station code; no observed or forecast weather",
+    "xgboost_shared_quantile": "Origin-safe local-day-aligned check-out lags (24, 48, 168 hours), local calendar/holiday/event features, station code; no observed or forecast weather",
+    "xgboost_short_lag_not_deployable": "Historical short lags (1, 2, 3, 24, 168 rows); non-deployable lookahead ablation",
     "transformer_xgbfeatures_longcontext_nb": "504 past check-out hours (formal lags 1, 2, 3, 24, 168), local calendar/holiday/event features, station embedding/code; no weather; Negative Binomial head",
     "transformer_xgbfeatures_longcontext_quantile": "504 past check-out hours (formal lags 1, 2, 3, 24, 168), local calendar/holiday/event features, station embedding/code; no weather; direct ordered 19-quantile pinball head",
 }
@@ -45,6 +46,7 @@ def main() -> None:
     )
     results_md = ["# Validation Results (2025)", "",
                   "All full-window rows below are 2025 validation results on the same 435,600 check-out station-hours: 50 stations x 363 local days x 24 hours. This validation period was also used for transformer early stopping and tuning; these are not 2026 test results.", "",
+                  "> **XGBoost status:** the existing `xgboost_shared_quantile` row is the historical short-lag result. It is a non-deployable ablation pending the origin-safe 24/48/168 local-day-aligned refit; do not interpret it as a current model selection.", "",
                   _table(display, ["model", "features", "pinball_loss", "crps", "coverage_90", "median_mae", "n_observations"]), "",
                   "Pinball loss is averaged over the fixed 19 quantiles (0.05--0.95 by 0.05). CRPS is approximated as twice the trapezoidal integral of pinball loss across that grid, so it is related to, not independent of, pinball loss.",
                   "", "## Quantile construction", "",
@@ -69,11 +71,10 @@ def main() -> None:
             pinball_loss=variant_models.pinball_loss.map("{:.4f}".format), crps=variant_models.crps.map("{:.4f}".format),
             coverage_90=variant_models.coverage_90.map("{:.3f}".format), median_mae=variant_models.median_mae.map("{:.4f}".format),
         )
-        xgb = results.loc[results.model == "xgboost_shared_quantile"].iloc[0]
         results_md += ["", "## Targeted longer-context transformer variants", "",
-                       "Both variants use the no-weather XGBoost covariate set and were tuned with 2025 validation early stopping. They are compared against XGBoost on the same 435,600 rows; their paired bootstrap rows appear above.", "",
+                       "Both variants use the no-weather XGBoost covariate set and were tuned with 2025 validation early stopping. The prior XGBoost comparison used short target-day lags and is a non-deployable ablation; origin-safe XGBoost validation metrics are pending refit.", "",
                        _table(variant_display, ["model", "pinball_loss", "crps", "coverage_90", "median_mae", "n_observations"]), "",
-                       f"Selected on 2025: `xgboost_shared_quantile` (pinball {xgb.pinball_loss:.4f}); neither targeted transformer beat it. Selecting among several variants on this same tuning period makes the selected validation score slightly optimistic and it is not a 2026 test result."]
+                       "No model is selected over origin-safe XGBoost until the refit is complete."]
     sampling_path = cfg.REPORTS_DIR / "transformer_sampling_audit.csv"
     if sampling_path.exists():
         sampling = pd.read_csv(sampling_path).iloc[0]
@@ -163,16 +164,14 @@ All models are scored on the same 24 future hours for each of 363 eligible local
     )
     xgboost = results.loc[results.model == "xgboost_shared_quantile"]
     if len(xgboost):
-        xgb = xgboost.iloc[0]
-        summary += (f"- The shared XGBoost quantile baseline, fit only on 2023--2024 data, has pinball loss "
-                    f"{xgb.pinball_loss:.4f}, CRPS {xgb.crps:.4f}, and median MAE {xgb.median_mae:.4f}; its fit took "
-                    f"{xgb.fit_minutes:.2f} minutes.\n")
+        summary += ("- The prior shared XGBoost row used short target-day lags and is now a non-deployable ablation. "
+                    "Origin-safe XGBoost validation metrics are pending refit.\n")
     targeted = results[results.model.str.startswith("transformer_xgbfeatures_", na=False)]
     if len(targeted):
         best_targeted = targeted.sort_values("pinball_loss").iloc[0]
         summary += (f"- The targeted longer-context no-weather transformer variants used the XGBoost covariate set. The best was "
-                    f"`{best_targeted.model}` at {best_targeted.pinball_loss:.4f} pinball loss, so XGBoost ({xgb.pinball_loss:.4f}) "
-                    f"remains selected on 2025; this several-variant choice makes its validation score slightly optimistic and is not a test result.\n")
+                    f"`{best_targeted.model}` at {best_targeted.pinball_loss:.4f} pinball loss. No model is selected over origin-safe "
+                    "XGBoost until its validation refit is complete.\n")
     if (cfg.REPORTS_DIR / "chronos_subsample_validation_2025.csv").exists():
         chronos_score = pd.read_csv(cfg.REPORTS_DIR / "chronos_subsample_validation_2025.csv").query("model == 'chronos2_zero_shot'").iloc[0]
         summary += (f"- Chronos-2 zero-shot was evaluated only on the fixed 14,400-row 2025 validation subsample; "
