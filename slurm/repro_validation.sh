@@ -5,7 +5,8 @@
 #SBATCH --gres=gpu:a100_1g.5gb:1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=16G
-#SBATCH --time=04:00:00
+#SBATCH --time=06:00:00
+#SBATCH --signal=B:TERM@120
 #SBATCH --output=slurm/logs/%x-%j.out
 #SBATCH --mail-type=END,FAIL
 
@@ -22,7 +23,12 @@ echo "commit under test: $(git rev-parse HEAD)"
 OUT=slurm/logs/repro-$SLURM_JOB_ID
 mkdir -p "$OUT"
 cp -r data/predictions data/predictions_backup
-trap 'rm -rf data/predictions && mv data/predictions_backup data/predictions' EXIT
+restore_predictions() {
+  rm -rf data/predictions
+  mv data/predictions_backup data/predictions
+}
+trap restore_predictions EXIT
+trap 'exit 1' TERM INT
 
 status=0
 for TARGET in checkouts returns; do

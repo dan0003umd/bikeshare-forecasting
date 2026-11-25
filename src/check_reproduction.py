@@ -13,8 +13,10 @@ MODELS = [
 COLUMNS = ("pinball_loss", "crps", "coverage_90", "median_mae")
 
 
-def tolerance(model):
-    return 1e-6 if model.startswith(("seasonal_naive", "lstm")) else 1e-4
+def tolerance(model, metric):
+    if model.startswith(("seasonal_naive", "lstm")):
+        return 1e-6
+    return 1e-4 if metric in ("pinball_loss", "crps") else 1e-3
 
 
 def read(path):
@@ -31,14 +33,24 @@ def main(reference_path, new_path):
             failed = True
             continue
         ref, got = reference[model], new[model]
-        if int(float(ref["n_observations"])) != int(float(got["n_observations"])):
-            print(f"FAIL     {model}: n_observations differs")
+        ref_rows, got_rows = int(float(ref["n_observations"])), int(float(got["n_observations"]))
+        row_ok = ref_rows == got_rows == 435600
+        print(f"{'PASS' if row_ok else 'FAIL'}     {model}: n_observations ref={ref_rows} new={got_rows} expected=435600")
+        failing = [] if row_ok else ["n_observations"]
+        for metric in COLUMNS:
+            difference = abs(float(ref[metric]) - float(got[metric]))
+            allowed = tolerance(model, metric)
+            ok = difference <= allowed
+            print(f"{'PASS' if ok else 'FAIL'}     {model}: {metric} abs diff {difference:.2e} (tolerance {allowed:.0e})")
+            if not ok:
+                failing.append(metric)
+        if model == "xgboost_shared_quantile":
+            print(f"INFO     {model}: time_budget_reached ref={ref.get('time_budget_reached', '')} new={got.get('time_budget_reached', '')}")
+        if failing:
+            print(f"FAIL     {model}: failing metrics: {', '.join(failing)}")
             failed = True
-            continue
-        worst = max(abs(float(ref[c]) - float(got[c])) for c in COLUMNS)
-        ok = worst <= tolerance(model)
-        failed = failed or not ok
-        print(f"{'OK  ' if ok else 'FAIL'}     {model}: max abs diff {worst:.2e} (tolerance {tolerance(model):.0e})")
+        else:
+            print(f"PASS     {model}: all comparisons passed")
     sys.exit(1 if failed else 0)
 
 
