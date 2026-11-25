@@ -56,3 +56,42 @@ def test_historical_short_lag_ablation_fails_the_origin_check():
     assert dst_rows[["lag_1", "lag_2", "lag_3"]].to_numpy().any()
     _, columns = xgboost_features(table, short_lag_ablation=True)
     assert [c for c in columns if c.startswith("lag_")] == ["lag_1", "lag_2", "lag_3", "lag_24", "lag_168"]
+
+
+def _station_hours_through_spring_dst(dst_date: str) -> pd.DataFrame:
+    """Hourly UTC rows spanning a local spring-forward date and seven prior days."""
+    start = pd.Timestamp(dst_date, tz=cfg.LOCAL_TZ) - pd.Timedelta(days=9)
+    end = pd.Timestamp(dst_date, tz=cfg.LOCAL_TZ) + pd.Timedelta(days=10)
+    ts = pd.date_range(start.tz_convert("UTC"), end.tz_convert("UTC"), freq="h", inclusive="left")
+    local = ts.tz_convert(cfg.LOCAL_TZ)
+    return pd.DataFrame({
+        "station_id": "A", "ts_utc": ts, "checkouts": np.arange(len(ts), dtype=float),
+        "hour": local.hour, "weekday": local.weekday, "month": local.month,
+        "is_us_holiday": False, "event_flag": False,
+    })
+
+
+def test_spring_forward_missing_local_source_is_nan_without_dropping_rows():
+    for dst_date in ("2025-03-09", "2026-03-08"):
+        table = _station_hours_through_spring_dst(dst_date)
+        features, columns = xgboost_features(table)
+        local = table.ts_utc.dt.tz_convert(cfg.LOCAL_TZ)
+        dates = local.dt.tz_localize(None).dt.normalize()
+        hours = local.dt.hour
+        dst = pd.Timestamp(dst_date)
+        # Include all three possible source dates: +1 day for lag_24, +2 for
+        # lag_48, and +7 for lag_168. No feature construction may remove rows.
+        checked = (dates >= dst) & (dates <= dst + pd.Timedelta(days=7))
+        assert len(features) == len(table)
+        assert len(features.loc[checked]) == int(checked.sum())
+        source_keys = set(zip(dates, hours))
+        for lag in LEAK_FREE_LAGS:
+            source_dates = dates - pd.Timedelta(days=lag // 24)
+            expected_missing = pd.Series(
+                [(day, hour) not in source_keys for day, hour in zip(source_dates, hours)], index=table.index
+            )
+            actual_missing = features[f"lag_{lag}"].isna()
+            assert actual_missing.loc[checked].equals(expected_missing.loc[checked])
+            assert actual_missing.loc[checked].sum() == 1
+        assert not lag_leakage_mask(table, LEAK_FREE_LAGS).to_numpy().any()
+        assert [c for c in columns if c.startswith("lag_")] == ["lag_24", "lag_48", "lag_168"]

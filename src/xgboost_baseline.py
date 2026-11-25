@@ -117,6 +117,32 @@ def xgboost_features(table: pd.DataFrame, *, short_lag_ablation: bool = False) -
     return out, columns
 
 
+def assert_validation_keys(table: pd.DataFrame, evaluation_mask: pd.Series) -> None:
+    """Require the common 2025 window and exactly its saved prediction keys.
+
+    Missing local-hour sources are represented as feature NaNs. They must never
+    remove target rows from the 24-hour daily evaluation window.
+    """
+    keys = ["station_id", "ts_utc"]
+    expected = 435_600
+    actual = int(evaluation_mask.sum())
+    if actual != expected:
+        raise RuntimeError(f"expected {expected:,} validation observations, found {actual:,}")
+    reference = cfg.PREDICTIONS_DIR / "seasonal_naive_rolling_8week_validation_2025.parquet"
+    if not reference.exists():
+        raise FileNotFoundError(f"validation key reference is missing: {reference}")
+    produced = table.loc[evaluation_mask, keys].copy()
+    saved = pd.read_parquet(reference, columns=keys)
+    for frame in (produced, saved):
+        frame["station_id"] = frame["station_id"].astype(str)
+        frame["ts_utc"] = pd.to_datetime(frame["ts_utc"], utc=True)
+    produced = produced.sort_values(keys).reset_index(drop=True)
+    saved = saved.sort_values(keys).reset_index(drop=True)
+    if len(saved) != expected or produced.duplicated(keys).any() or saved.duplicated(keys).any() or not produced.equals(saved):
+        raise RuntimeError("validation keys do not exactly match seasonal-naive validation predictions")
+    print(f"PASS validation rows/keys: {actual:,} match {reference}")
+
+
 def deadline_callback(started: float, max_minutes: float):
     """Create the XGBoost-only deadline callback without burdening feature tests."""
     from xgboost.callback import TrainingCallback
@@ -140,13 +166,14 @@ def main() -> None:
     parser.add_argument("--device", default="cuda", choices=["cuda", "cpu"])
     parser.add_argument("--short-lag-ablation", action="store_true",
                         help="reproduce the historical non-deployable 1/2/3/24/168-hour lag ablation")
+    parser.add_argument("--dry-run-features", action="store_true",
+                        help="build leak-free validation features and check rows/keys; do not fit or write")
     add_final_argument(parser)
     args = parser.parse_args()
-    import xgboost as xgb
-    from .baselines import save_predictions, save_result
-
     split = "test" if args.final else "validation"
     tag = "test_2026" if args.final else "validation_2025"
+    if args.dry_run_features and args.final:
+        raise SystemExit("--dry-run-features is validation-only and never reads 2026")
     started = time.monotonic()
     loaded = load_table_through_test(final=True) if args.final else load_pretest_table()
     table, columns = xgboost_features(
@@ -155,10 +182,18 @@ def main() -> None:
     )
     train = split_mask(table.ts_utc, "train") & table[columns].notna().all(axis=1)
     eval_mask = validation_window_mask(table, split, args.final)
-    validation = eval_mask & table[columns].notna().all(axis=1)
-    expected = int(eval_mask.sum()) if args.final else 435_600
-    if validation.sum() != expected:
-        raise RuntimeError(f"expected {expected:,} {split} observations, found {validation.sum():,}")
+    # XGBoost natively handles missing values. In particular, local-day lag
+    # sources can be absent after spring-forward; keep all forecast targets.
+    validation = eval_mask
+    if not args.final:
+        assert_validation_keys(table, validation)
+    elif validation.sum() != int(eval_mask.sum()):
+        raise RuntimeError("test evaluation rows unexpectedly changed after feature construction")
+    if args.dry_run_features:
+        print(f"PASS dry-run features: target={cfg.TARGET}; rows={int(validation.sum()):,}; columns={len(columns)}")
+        return
+    import xgboost as xgb
+    from .baselines import save_predictions, save_result
     deadline = deadline_callback(started, args.max_minutes)
     model = xgb.XGBRegressor(
         objective="reg:quantileerror", quantile_alpha=list(cfg.QUANTILES), n_estimators=args.n_estimators,
