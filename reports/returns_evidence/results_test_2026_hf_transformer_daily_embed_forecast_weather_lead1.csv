@@ -1,0 +1,2 @@
+model,pinball_loss,crps,coverage_90,median_mae,n_observations,validation_days,stations,rows,dst_or_non24_rows_excluded,excluded_warmup_rows
+hf_transformer_daily_embed_forecast_weather_lead1,0.5686466589267289,1.0597497905177695,0.9409620098039215,1.5223268995098038,326400,272,50,326400,1316350,0

@@ -1,0 +1,2 @@
+model,pinball_loss,crps,coverage_90,median_mae,n_observations,validation_days,stations,rows,dst_or_non24_rows_excluded,excluded_warmup_rows,fit_minutes,time_budget_reached
+xgboost_shared_quantile,0.6312333471506221,1.1764872772324133,0.8865870098039216,1.6914590815018071,326400,272,50,326400,1316350,0,3.8434221143834293,False

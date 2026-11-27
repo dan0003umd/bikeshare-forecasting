@@ -1,0 +1,2 @@
+model,pinball_loss,crps,coverage_90,median_mae,n_observations,validation_days,stations,rows,dst_or_non24_rows_excluded,excluded_warmup_rows
+seasonal_naive_rolling_8week,0.6770579555550493,1.2562621177601385,0.7832046568627451,1.7574877450980393,326400,272,50,326400,1316350,0

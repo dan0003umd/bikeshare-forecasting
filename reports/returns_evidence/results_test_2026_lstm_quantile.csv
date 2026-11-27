@@ -1,0 +1,2 @@
+model,pinball_loss,crps,coverage_90,median_mae,n_observations,validation_days,stations,rows,dst_or_non24_rows_excluded,excluded_warmup_rows
+lstm_quantile,0.6052422347397656,1.128022553006564,0.9002205882352942,1.6189873645443538,326400,272,50,326400,1316350,0
