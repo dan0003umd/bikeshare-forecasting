@@ -1,0 +1,61 @@
+Loading python/3.10.10/gcc/11.3.0/nocuda/linux-rhel8-zen2
+  Loading requirement: gcc/11.3.0
+frozen commit: 37b8517c9ddb43490baa301214366ee747c2445a
+=== final test: checkouts ===
+326,400 prediction rows -> /scratch/zt1/project/msml612/user/dboone12/bikeshare-forecasting/data/predictions
+                       model  pinball_loss     crps  coverage_90  median_mae  n_observations  validation_days  stations   rows  dst_or_non24_rows_excluded  excluded_warmup_rows
+seasonal_naive_rolling_8week      0.677058 1.256262     0.783205    1.757488          326400              272        50 326400                     1316350                     0
+/scratch/zt1/project/msml612/user/dboone12/venvs/bikeshare/lib/python3.10/site-packages/xgboost/core.py:751: UserWarning: [14:15:02] WARNING: /__w/xgboost/xgboost/src/common/error_msg.cc:62: Falling back to prediction using DMatrix due to mismatched devices. This might lead to higher memory usage and slower performance. XGBoost is running on: cuda:0, while the input data is on: cpu.
+Potential solutions:
+- Use a data structure that matches the device ordinal in the booster.
+- Set the device for booster before call to inplace_predict.
+
+This warning will only be shown once.
+
+  return func(**kwargs)
+326,400 prediction rows -> /scratch/zt1/project/msml612/user/dboone12/bikeshare-forecasting/data/predictions
+                  model  pinball_loss     crps  coverage_90  median_mae  n_observations  validation_days  stations   rows  dst_or_non24_rows_excluded  excluded_warmup_rows  fit_minutes  time_budget_reached
+xgboost_shared_quantile      0.631233 1.176487     0.886587    1.691459          326400              272        50 326400                     1316350                     0     3.843422                False
+fit_minutes=3.84; time_budget_reached=False
+326,400 prediction rows -> /scratch/zt1/project/msml612/user/dboone12/bikeshare-forecasting/data/predictions/lstm_quantile_test_2026.parquet
+        model  pinball_loss     crps  coverage_90  median_mae  n_observations  validation_days  stations   rows  dst_or_non24_rows_excluded  excluded_warmup_rows
+lstm_quantile      0.623039 1.160898     0.885941    1.660291          326400              272        50 326400                     1316350                     0
+326,400 prediction rows -> /scratch/zt1/project/msml612/user/dboone12/bikeshare-forecasting/data/predictions/hf_transformer_daily_embed_noweather_test_2026.parquet
+                               model  pinball_loss    crps  coverage_90  median_mae  n_observations  validation_days  stations   rows  dst_or_non24_rows_excluded  excluded_warmup_rows
+hf_transformer_daily_embed_noweather      0.600051 1.11822     0.935573    1.606454          326400              272        50 326400                     1316350                     0
+326,400 prediction rows -> /scratch/zt1/project/msml612/user/dboone12/bikeshare-forecasting/data/predictions/hf_transformer_daily_embed_observed_weather_oracle_test_2026.parquet
+                                             model  pinball_loss    crps  coverage_90  median_mae  n_observations  validation_days  stations   rows  dst_or_non24_rows_excluded  excluded_warmup_rows
+hf_transformer_daily_embed_observed_weather_oracle      0.580996 1.08275     0.946777    1.553139          326400              272        50 326400                     1316350                     0
+swapped in lead-1 forecast weather for 765,550 validation rows
+326,400 prediction rows -> /scratch/zt1/project/msml612/user/dboone12/bikeshare-forecasting/data/predictions/hf_transformer_daily_embed_forecast_weather_lead1_test_2026.parquet
+                                            model  pinball_loss     crps  coverage_90  median_mae  n_observations  validation_days  stations   rows  dst_or_non24_rows_excluded  excluded_warmup_rows
+hf_transformer_daily_embed_forecast_weather_lead1      0.589256 1.098097     0.943624    1.575823          326400              272        50 326400                     1316350                     0
+=== final test: returns ===
+326,400 prediction rows -> /scratch/zt1/project/msml612/user/dboone12/bikeshare-forecasting/data/predictions/returns
+                       model  pinball_loss     crps  coverage_90  median_mae  n_observations  validation_days  stations   rows  dst_or_non24_rows_excluded  excluded_warmup_rows
+seasonal_naive_rolling_8week       0.66084 1.226289     0.785846    1.717708          326400              272        50 326400                     1316350                     0
+/scratch/zt1/project/msml612/user/dboone12/venvs/bikeshare/lib/python3.10/site-packages/xgboost/core.py:751: UserWarning: [14:56:35] WARNING: /__w/xgboost/xgboost/src/common/error_msg.cc:62: Falling back to prediction using DMatrix due to mismatched devices. This might lead to higher memory usage and slower performance. XGBoost is running on: cuda:0, while the input data is on: cpu.
+Potential solutions:
+- Use a data structure that matches the device ordinal in the booster.
+- Set the device for booster before call to inplace_predict.
+
+This warning will only be shown once.
+
+  return func(**kwargs)
+326,400 prediction rows -> /scratch/zt1/project/msml612/user/dboone12/bikeshare-forecasting/data/predictions/returns
+                  model  pinball_loss     crps  coverage_90  median_mae  n_observations  validation_days  stations   rows  dst_or_non24_rows_excluded  excluded_warmup_rows  fit_minutes  time_budget_reached
+xgboost_shared_quantile       0.61483 1.146089     0.889023    1.650717          326400              272        50 326400                     1316350                     0     2.857842                False
+fit_minutes=2.86; time_budget_reached=False
+326,400 prediction rows -> /scratch/zt1/project/msml612/user/dboone12/bikeshare-forecasting/data/predictions/returns/lstm_quantile_test_2026.parquet
+        model  pinball_loss     crps  coverage_90  median_mae  n_observations  validation_days  stations   rows  dst_or_non24_rows_excluded  excluded_warmup_rows
+lstm_quantile      0.605242 1.128023     0.900221    1.618987          326400              272        50 326400                     1316350                     0
+326,400 prediction rows -> /scratch/zt1/project/msml612/user/dboone12/bikeshare-forecasting/data/predictions/returns/hf_transformer_daily_embed_noweather_test_2026.parquet
+                               model  pinball_loss     crps  coverage_90  median_mae  n_observations  validation_days  stations   rows  dst_or_non24_rows_excluded  excluded_warmup_rows
+hf_transformer_daily_embed_noweather      0.588526 1.096865     0.932598    1.578059          326400              272        50 326400                     1316350                     0
+326,400 prediction rows -> /scratch/zt1/project/msml612/user/dboone12/bikeshare-forecasting/data/predictions/returns/hf_transformer_daily_embed_observed_weather_oracle_test_2026.parquet
+                                             model  pinball_loss     crps  coverage_90  median_mae  n_observations  validation_days  stations   rows  dst_or_non24_rows_excluded  excluded_warmup_rows
+hf_transformer_daily_embed_observed_weather_oracle      0.558688 1.041242     0.944161    1.496028          326400              272        50 326400                     1316350                     0
+swapped in lead-1 forecast weather for 765,550 validation rows
+326,400 prediction rows -> /scratch/zt1/project/msml612/user/dboone12/bikeshare-forecasting/data/predictions/returns/hf_transformer_daily_embed_forecast_weather_lead1_test_2026.parquet
+                                            model  pinball_loss    crps  coverage_90  median_mae  n_observations  validation_days  stations   rows  dst_or_non24_rows_excluded  excluded_warmup_rows
+hf_transformer_daily_embed_forecast_weather_lead1      0.568647 1.05975     0.940962    1.522327          326400              272        50 326400                     1316350                     0
